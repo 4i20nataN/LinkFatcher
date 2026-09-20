@@ -26,6 +26,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "nsis",
       "deb",
@@ -41,9 +42,9 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVCQzJDNjVDN0EyODI2MUYKUldRZkppaDZYTWJDV3dhY05hakNrZFE5SzRzSHpOSk5JTGtOQW9wWmV4Sm1mMjVaeUZOUS9SakgK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM1MTM0NTAzRTc5NjY2MzcKUldRM1pwYm5BMFVUTmF4eTcxWlhoTEZ2V1N6SjFEQWxON2lTUmg0SVN3ZitJWm03TUFKSjdBRDIK",
       "endpoints": [
-        "https://github.com/4i20nataN/LinkFetcher/releases/latest/download/latest.json"
+        "https://github.com/4i20nataN/LinkFatcher/releases/latest/download/latest.json"
       ]
     }
   }
