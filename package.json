@@ -1,0 +1,44 @@
+{
+  "name": "linkfetcher",
+  "private": true,
+  "version": "1.2.0",
+  "description": "LinkFetcher-Tauri - desktop yt-dlp frontend (Tauri v2)",
+  "author": {
+    "name": "Natan Vanim",
+    "email": "natan.vanim@gmail.com"
+  },
+  "type": "module",
+  "scripts": {
+    "dev:tauri": "vite --port 1420 --strictPort",
+    "tauri:dev": "npx @tauri-apps/cli@2 dev",
+    "build:frontend": "vite build",
+    "tauri": "tauri",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@emotion/is-prop-valid": "^1.4.0",
+    "@google/genai": "^2.4.0",
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "autoprefixer": "^10.4.21",
+    "chrome-devtools-mcp": "^1.6.0",
+    "esbuild": "^0.25.0",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "tailwindcss": "^4.1.14",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.3",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-fs": "^2.5.2",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-shell": "^2.3.6",
+    "@tauri-apps/plugin-updater": "^2.11.0"
+  }
+}

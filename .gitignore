@@ -1,0 +1,38 @@
+# Node / frontend
+node_modules/
+dist/
+dist-web/
+*.local
+
+# Rust / Tauri
+src-tauri/target/
+# Cargo.lock de app binário É commitado (build reproduzível)
+*.node
+*.pdb
+
+# Bundles e binários (nunca commitados)
+*.AppImage
+*.deb
+*.msi
+*.exe
+*.nsis.*
+bin/
+*.pem
+# Chave privada do updater (nunca commitar; só a .pub vai junto)
+signing-keys/*.key
+
+# OS / editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+
+# Temporários
+tmp/
+*.tmp
+
+# Processo interno (não vai pro repo público)
+AGENTS.md
+CONTRIBUTING.md
+docs/

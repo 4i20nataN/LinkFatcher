@@ -1,0 +1,50 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LinkFetcher",
+  "version": "1.2.0",
+  "identifier": "com.linkfetcher.app",
+  "build": {
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist-web",
+    "beforeDevCommand": "npm run dev:tauri",
+    "beforeBuildCommand": "npm run build:frontend"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "LinkFetcher",
+        "width": 1400,
+        "height": 1000,
+        "minWidth": 900,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: https: data:; media-src 'self' asset: https: data:; style-src 'self' 'unsafe-inline' https:; font-src 'self' https: data:; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https: http:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "deb",
+      "appimage"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVCQzJDNjVDN0EyODI2MUYKUldRZkppaDZYTWJDV3dhY05hakNrZFE5SzRzSHpOSk5JTGtOQW9wWmV4Sm1mMjVaeUZOUS9SakgK",
+      "endpoints": [
+        "https://github.com/4i20nataN/LinkFetcher/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

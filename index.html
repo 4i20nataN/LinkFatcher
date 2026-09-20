@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#030406" />
+    <meta name="description" content="LinkFetcher — Download de mídia inteligente com yt-dlp" />
+    <title>LinkFetcher</title>
+    <style>
+      html,body,#root{height:100%;margin:0;padding:0;overflow:hidden;background:#030406;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif}
+      #root>div{display:flex;flex-direction:column;height:100%}
+      .lf-skel{display:flex;align-items:center;gap:.5rem;padding:1rem;font-weight:700;font-size:1.125rem;letter-spacing:-.025em;min-height:4rem;border-bottom:1px solid rgba(255,255,255,.06)}
+      .lf-skel-icon{width:2.5rem;height:2.5rem;border-radius:.75rem;background:linear-gradient(135deg,#6366f1,#818cf8);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    </style>
+  </head>
+  <body>
+    <div id="root" role="application" aria-label="LinkFetcher">
+      <div>
+        <div class="lf-skel">
+          <div class="lf-skel-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+          <span>LinkFetcher</span>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

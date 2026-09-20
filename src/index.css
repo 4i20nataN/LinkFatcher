@@ -1,0 +1,1869 @@
+
+@import "tailwindcss";
+
+/* CLS prevention: fallback fonts sized to match web fonts before they load */
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: optional;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Regular.woff2') format('woff2');
+  font-weight: 500;
+  font-display: optional;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Regular.woff2') format('woff2');
+  font-weight: 600;
+  font-display: optional;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Regular.woff2') format('woff2');
+  font-weight: 700;
+  font-display: optional;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: optional;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 500;
+  font-display: optional;
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('/fonts/SpaceGrotesk-Regular.woff2') format('woff2');
+  font-weight: 500;
+  font-display: optional;
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('/fonts/SpaceGrotesk-Regular.woff2') format('woff2');
+  font-weight: 700;
+  font-display: optional;
+}
+@font-face {
+  font-family: 'Inter Fallback';
+  src: local('Arial');
+  size-adjust: 107.64%;
+  ascent-override: 90%;
+  descent-override: 22.43%;
+  line-gap-override: 0%;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono Fallback';
+  src: local('Courier New');
+  size-adjust: 100%;
+  ascent-override: 90%;
+  descent-override: 22%;
+  line-gap-override: 0%;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: "Inter", "Inter Fallback", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "JetBrains Mono Fallback", ui-monospace, SFMono-Regular, monospace;
+  --font-display: "Space Grotesk", sans-serif;
+
+  /* Escala tipográfica global +20% — só fontes, sem tocar espaçamentos/layout */
+  --text-xs: 0.9rem;
+  --text-xs--line-height: 1.2rem;
+  --text-sm: 1.05rem;
+  --text-sm--line-height: 1.5rem;
+  --text-base: 1.2rem;
+  --text-base--line-height: 1.8rem;
+  --text-lg: 1.35rem;
+  --text-lg--line-height: 2.1rem;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 2.1rem;
+  --text-2xl: 1.8rem;
+  --text-2xl--line-height: 2.4rem;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 2.7rem;
+  --text-4xl: 2.7rem;
+  --text-4xl--line-height: 3rem;
+
+  /* Reduced rounded corners for a sleeker, sharper, less circular look */
+  --radius-3xl: 10px;
+  --radius-2xl: 8px;
+  --radius-xl: 6px;
+  --radius-lg: 4px;
+  --radius-md: 3px;
+  --radius-sm: 2px;
+}
+
+/* UI Scale — only text, no buttons/padding affected. 0%=tiny, 50%=default, 100%=large */
+/* Base +20% aplicada sobre a escala original */
+.fs-xs {
+  font-size: calc((7.2 + var(--ui-scale, 50) * 0.144) * 1px);
+}
+
+.fs-sm {
+  font-size: calc((9.6 + var(--ui-scale, 50) * 0.144) * 1px);
+}
+
+.fs-md {
+  font-size: calc((10.8 + var(--ui-scale, 50) * 0.168) * 1px);
+}
+
+.fs-lg {
+  font-size: calc((12 + var(--ui-scale, 50) * 0.192) * 1px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════ */
+/* ESCALA TIPOGRÁFICA GLOBAL +20% — tamanhos arbitrários text-[Npx]               */
+/* CSS sem layer vence as utilities em @layer do Tailwind sem precisar reorder   */
+/* ═══════════════════════════════════════════════════════════════════════════════ */
+.text-\[7px\] { font-size: 8.4px; }
+.text-\[8px\] { font-size: 9.6px; }
+.text-\[9px\] { font-size: 10.8px; }
+.text-\[10px\] { font-size: 12px; }
+.text-\[11px\] { font-size: 13.2px; }
+.text-\[12px\] { font-size: 14.4px; }
+.text-\[13px\] { font-size: 15.6px; }
+.text-\[15px\] { font-size: 18px; }
+
+/* Ícones Lucide acompanham a escala +20%: a prop size={N} gera width/height
+   em px fora do font-size, então escala via zoom (suportado no Chromium e
+   WebKit). Seletor mira só SVGs do lucide-react (classe .lucide). */
+svg.lucide { zoom: 1.2; }
+
+/* Custom scrollbars matching Nothing OS / minimalist design */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.25);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.45);
+}
+
+/* Base custom classes */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* #root keeps overflow-y: auto (not hidden) as a scroll-freeze fallback:
+   an ancestor with overflow: hidden can lock scrolling of the inner
+   container. The actual scrolling still happens in <main> (overflow-y-auto). */
+#root {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Safe-area helpers (notch / status bar / gesture nav bar) — gaps #13 and #18 */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+body {
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════ */
+/* KEYBOARD ACCESSIBILITY — Focus-visible baseline                               */
+/* Shows visible focus ring for keyboard users, hidden for mouse/touch clicks    */
+/* ═══════════════════════════════════════════════════════════════════════════════ */
+
+:focus-visible {
+  outline: 2px solid var(--color-primary, #6366f1);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Focus states for custom interactive components */
+.lf-btn-outline:focus-visible,
+.lf-opt:focus-visible,
+.lf-nav-item:focus-visible,
+.tag:focus-visible {
+  outline: 2px solid var(--color-primary, #6366f1);
+  outline-offset: 2px;
+}
+
+/* Range slider keyboard focus */
+.range-slider:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-primary, #6366f1);
+  outline-offset: 2px;
+}
+
+.range-slider:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-primary, #6366f1);
+  outline-offset: 2px;
+}
+
+/* CLS prevention — containment on Suspense boundaries and animated containers.
+   Sem will-change permanente: no render por software ele força o painel todo
+   num layer re-enviado a cada scroll/mudança. */
+.lf-animated-view { contain: layout style; }
+
+/* CSS Page Transitions — replaces motion_react AnimatePresence */
+@keyframes lf-css-slide-enter {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes lf-css-slide-exit {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-15px); }
+}
+.lf-css-enter { animation: lf-css-slide-enter 0.25s ease-out both; }
+.lf-css-exit { animation: lf-css-slide-exit 0.2s ease-in both; }
+
+/* Ambient Accent Overlay — subtle colored glow for tone inclination (reference: bg-glow-container) */
+.ambient-accent-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ambient-accent-overlay::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(circle at 15% 25%, rgba(var(--color-primary-rgb, 99, 102, 241), 0.05) 0%, rgba(var(--color-primary-rgb, 99, 102, 241), 0.008) 40%, transparent 70%),
+    radial-gradient(circle at 85% 75%, rgba(var(--color-primary-rgb, 99, 102, 241), 0.06) 0%, rgba(var(--color-primary-rgb, 99, 102, 241), 0.008) 45%, transparent 75%);
+  animation: ambientDrift 28s ease-in-out infinite alternate;
+}
+
+@keyframes ambientDrift {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+
+  100% {
+    transform: scale(1.08) rotate(2deg);
+  }
+}
+
+/* Body background — dark é tom estático fixo (não acompanha a cor de destaque) */
+.dark {
+  background: #05070c;
+}
+
+.gray-mode {
+  background: #606878;
+}
+
+.light {
+  background: linear-gradient(rgba(var(--color-primary-rgb, 99, 102, 241), 0.015), rgba(var(--color-primary-rgb, 99, 102, 241), 0.015)), #EDE5C8;
+}
+
+.white {
+  background: linear-gradient(rgba(var(--color-primary-rgb, 99, 102, 241), 0.015), rgba(var(--color-primary-rgb, 99, 102, 241), 0.015)), #F4F6F9;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════ */
+/* SEMANTIC THEME SYSTEM — Professional Layout Optimization                       */
+/* Components use: lf-surface, lf-border, lf-text, lf-text-muted, etc.           */
+/* CSS vars auto-adapt per theme → zero duplication across dark/gray/light        */
+/* ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Theme Variables ────────────────────────────────────────────────────────── */
+.dark {
+  --lf-surface: rgba(10, 14, 23, 0.35);
+  --lf-surface-rgb: 10, 14, 23;
+  --lf-surface-raised: rgba(10, 14, 23, 0.50);
+  --lf-surface-sunken: rgba(0, 0, 0, 0.25);
+  --lf-border: rgba(255, 255, 255, 0.06);
+  --lf-border-strong: rgba(255, 255, 255, 0.08);
+  --lf-border-hover: rgba(255, 255, 255, 0.10);
+  --lf-text: #f1f5f9;
+  --lf-text-secondary: #94a3b8;
+  --lf-text-muted: #64748b;
+  --lf-text-faint: #475569;
+  --lf-input-bg: rgba(2, 3, 5, 0.70);
+  --lf-skeleton: rgba(255, 255, 255, 0.06);
+  --lf-badge: rgba(255, 255, 255, 0.06);
+}
+
+.light {
+  --lf-surface: rgba(255, 252, 245, 0.25);
+  --lf-surface-rgb: 255, 252, 245;
+  --lf-surface-raised: rgba(252, 249, 240, 0.32);
+  --lf-surface-sunken: rgba(235, 228, 212, 0.15);
+  --lf-border: rgba(210, 202, 180, 0.38);
+  --lf-border-strong: rgba(205, 198, 178, 0.52);
+  --lf-border-hover: rgba(190, 182, 160, 0.48);
+  --lf-text: #0F172A;
+  --lf-text-secondary: #1E293B;
+  --lf-text-muted: #475569;
+  --lf-text-faint: #64748B;
+  --lf-input-bg: rgba(255, 253, 248, 0.75);
+  --lf-skeleton: rgba(235, 228, 212, 0.55);
+  --lf-badge: rgba(220, 226, 236, 0.45);
+}
+
+.white {
+  --lf-surface: #FFFFFF;
+  --lf-surface-rgb: 255, 255, 255;
+  --lf-surface-raised: #F8FAFC;
+  --lf-surface-sunken: #EEF2FF;
+  --lf-border: rgba(190, 200, 215, 0.60);
+  --lf-border-strong: rgba(190, 200, 215, 0.80);
+  --lf-border-hover: rgba(190, 200, 215, 0.90);
+  --lf-text: #0F172A;
+  --lf-text-secondary: #1E293B;
+  --lf-text-muted: #475569;
+  --lf-text-faint: #64748B;
+  --lf-input-bg: #FFFFFF;
+  --lf-skeleton: #E6EBF3;
+  --lf-badge: #DCE2EC;
+}
+
+.gray-mode {
+  --lf-surface: rgba(60, 65, 78, 0.50);
+  --lf-surface-rgb: 60, 65, 78;
+  --lf-surface-raised: rgba(60, 65, 78, 0.60);
+  --lf-surface-sunken: rgba(30, 35, 45, 0.30);
+  --lf-border: rgba(255, 255, 255, 0.08);
+  --lf-border-strong: rgba(255, 255, 255, 0.14);
+  --lf-border-hover: rgba(255, 255, 255, 0.12);
+  --lf-text: #e2e8f0;
+  --lf-text-secondary: #cbd5e1;
+  --lf-text-muted: #94a3b8;
+  --lf-text-faint: #64748b;
+  --lf-input-bg: rgba(40, 45, 55, 0.50);
+  --lf-skeleton: rgba(255, 255, 255, 0.08);
+  --lf-badge: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Semantic Base Classes ──────────────────────────────────────────────────── */
+/* Components use these classes → CSS vars auto-adapt per theme                */
+/* NO — theme vars handle adaptation, utilities can still override  */
+.lf-surface {
+  background-color: var(--lf-surface);
+}
+
+.lf-surface-raised {
+  background-color: var(--lf-surface-raised);
+}
+
+.lf-surface-sunken {
+  background-color: var(--lf-surface-sunken);
+}
+
+.lf-border {
+  border-color: var(--lf-border);
+}
+
+.lf-border-strong {
+  border-color: var(--lf-border-strong);
+}
+
+.lf-text {
+  color: var(--lf-text);
+}
+
+.lf-text-secondary {
+  color: var(--lf-text-secondary);
+}
+
+.lf-text-muted {
+  color: var(--lf-text-muted);
+}
+
+.lf-text-faint {
+  color: var(--lf-text-faint);
+}
+
+.lf-input {
+  background-color: var(--lf-input-bg);
+  border-color: var(--lf-border);
+}
+
+.lf-skeleton {
+  background-color: var(--lf-skeleton);
+}
+
+.lf-badge {
+  background-color: var(--lf-badge);
+}
+
+/* Opacity variants — backdrop blur matches header bar aesthetic */
+.lf-surface-50 {
+  background-color: rgba(var(--lf-surface-rgb, 10, 14, 23) / 0.75);
+  backdrop-filter: blur(15px) saturate(150%);
+  -webkit-backdrop-filter: blur(15px) saturate(150%);
+}
+
+.lf-surface-40 {
+  background-color: rgba(var(--lf-surface-rgb, 10, 14, 23) / 0.40);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+
+.lf-surface-30 {
+  background-color: rgba(var(--lf-surface-rgb, 10, 14, 23) / 0.30);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+
+.lf-surface-20 {
+  background-color: rgba(var(--lf-surface-rgb, 10, 14, 23) / 0.20);
+  backdrop-filter: blur(6px) saturate(140%);
+  -webkit-backdrop-filter: blur(6px) saturate(140%);
+}
+
+.lf-surface-10 {
+  background-color: rgba(var(--lf-surface-rgb, 10, 14, 23) / 0.10);
+  backdrop-filter: blur(4px) saturate(130%);
+  -webkit-backdrop-filter: blur(4px) saturate(130%);
+}
+
+/* Light mode: surface opacities (warm beige) */
+.light .lf-surface-40 {
+  background-color: rgba(255, 252, 245, 0.92);
+}
+
+.light .lf-surface-30 {
+  background-color: rgba(255, 252, 245, 0.85);
+}
+
+.light .lf-surface-20 {
+  background-color: rgba(255, 252, 245, 0.75);
+}
+
+.light .lf-surface-10 {
+  background-color: rgba(255, 252, 245, 0.32);
+}
+
+/* Text color context variants */
+.lf-text-white {
+  color: #fff;
+}
+
+.lf-text-dark {
+  color: #141821;
+}
+
+/* Hover states */
+.lf-surface-hover:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.light .lf-surface-hover:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.lf-border-hover:hover {
+  border-color: var(--lf-border-hover);
+}
+
+/* Interactive accent border shorthand */
+.lf-accent-border {
+  border-color: var(--color-primary);
+}
+
+/* Frosted Glass Utilities — Obsidian Glass Design System (reference-exact values) */
+@utility glass-card {
+  background: rgba(12, 16, 26, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+@utility glass-card-hover {
+  background: rgba(12, 16, 26, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+@utility glass-sidebar {
+  background: rgba(12, 16, 26, 0.65);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3),
+    inset -1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+@utility glass-input {
+  background: rgba(2, 3, 5, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(6px) saturate(140%);
+  -webkit-backdrop-filter: blur(6px) saturate(140%);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+@utility glass-pill {
+  background: rgba(10, 14, 23, 0.40);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(6px) saturate(140%);
+  -webkit-backdrop-filter: blur(6px) saturate(140%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* bgmove keyframe — reference: bg-glow-container animation (used by glow layer + neural bg) */
+@keyframes bgmove {
+  0% {
+    scale: 1;
+    translate: 0 0;
+  }
+
+  50% {
+    scale: 1.1;
+    translate: 30px -40px;
+  }
+
+  100% {
+    scale: 0.95;
+    translate: -20px 20px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/* ACCENT INTERACTIVE STATES — Tone Inclination per reference     */
+/* All hover/active states use rgba(var(--color-primary-rgb), X)  */
+/* ═══════════════════════════════════════════════════════════════ */
+
+/* Scrollbar — accent colored (reference: scrollbar-thumb { background: var(--primary) }) */
+::-webkit-scrollbar-thumb {
+  background: var(--color-primary, rgba(99, 102, 241, 0.5));
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary, rgba(99, 102, 241, 0.7));
+}
+
+/* Dark: scrollbar em tom estático neutro (não acompanha a cor de destaque) */
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+/* Cinza: mesmo tratamento estático neutro */
+.gray-mode ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+}
+.gray-mode ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Buttons — outline with accent border + subtle fill on hover */
+.lf-btn-outline {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-muted, #94a3b8);
+  transition: all 0.2s ease;
+}
+
+.lf-btn-outline:hover {
+  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.06);
+  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.20);
+  color: #fff;
+}
+
+.lf-btn-outline.primary {
+  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.30);
+  color: var(--color-primary, #6366f1);
+}
+
+.lf-btn-outline.primary:hover {
+  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.08);
+}
+
+/* Options/chips — subtle fill on hover, accent on active */
+.lf-opt {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-muted, #94a3b8);
+  transition: all 0.2s ease;
+}
+
+.lf-opt:hover:not(.active) {
+  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.04);
+  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.15);
+  color: #fff;
+}
+
+.lf-opt.active {
+  background: var(--color-primary, #6366f1);
+  border-color: var(--color-primary, #6366f1);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.lf-opt.active:hover {
+  background: var(--color-primary, #6366f1);
+  color: #ffffff;
+  filter: brightness(0.95);
+}
+
+/* Nav items — accent fill on hover, stronger on active */
+.lf-nav-item {
+  transition: all 0.25s ease;
+}
+
+.lf-nav-item:hover {
+  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.05);
+  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.15);
+  color: #fff;
+}
+
+.lf-nav-item.active {
+  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.08);
+  color: var(--color-primary, #6366f1);
+  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.20);
+}
+
+.lf-nav-item.active svg {
+  color: var(--color-primary, #6366f1);
+}
+
+/* Checkboxes — accent check color */
+input[type="checkbox"] {
+  accent-color: var(--color-primary, #6366f1);
+}
+
+/* Light mode accent overrides for interactive states */
+.light .lf-btn-outline:hover {
+  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.06);
+  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.25);
+  color: #141821;
+}
+
+.light .lf-btn-outline.primary {
+  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.35);
+  color: var(--color-primary, #6366f1);
+}
+
+.light .lf-opt:hover:not(.active) {
+  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.05);
+  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.20);
+  color: #141821;
+}
+
+.light .lf-opt.active {
+  background: var(--color-primary, #6366f1);
+  border-color: var(--color-primary, #6366f1);
+  color: #0F172A;
+  font-weight: 600;
+}
+
+.light .lf-opt.active:hover {
+  background: var(--color-primary, #6366f1);
+  color: #0F172A;
+  filter: brightness(0.95);
+}
+
+.light .lf-nav-item:hover {
+  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.06);
+  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.18);
+  color: #141821;
+}
+
+.light .lf-nav-item.active {
+  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.10);
+  color: var(--color-primary, #6366f1);
+  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.25);
+}
+
+.light .lf-nav-item.active svg {
+  color: var(--color-primary, #6366f1);
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/* LIGHT MODE — Soft Frosted Glass (warm gray-white)              */
+/* Background: #dfe3ea · Panels: rgba(240,243,248,X)              */
+/* NOT pure white — softer on eyes with proper contrast           */
+/* ═══════════════════════════════════════════════════════════════ */
+
+/* ── Root ─────────────────────────────────────────────────────── */
+.light {
+  background-color: transparent;
+  color: #2C2416;
+}
+
+/* ── Glass Utilities — Frosted Glass (warm beige) ──────────────── */
+.light .glass-card {
+  background: rgba(250, 246, 235, 0.72);
+  border: 1px solid rgba(210, 200, 180, 0.60);
+  color: #0f172a;
+  box-shadow: 0 8px 32px rgba(120, 100, 60, 0.05);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.light .glass-card-hover:hover {
+  background: rgba(246, 240, 226, 0.80);
+  border-color: rgba(195, 188, 168, 0.70);
+  box-shadow: 0 12px 40px rgba(120, 100, 60, 0.08);
+}
+
+.light .glass-sidebar {
+  background: rgba(250, 246, 235, 0.72);
+  border-right: 1px solid rgba(210, 200, 180, 0.60);
+  box-shadow: 4px 0 20px rgba(120, 100, 60, 0.03);
+}
+
+.light .glass-input {
+  background-color: rgba(255, 253, 248, 0.52);
+  backdrop-filter: blur(6px) saturate(140%);
+  -webkit-backdrop-filter: blur(6px) saturate(140%);
+  border: 1px solid rgba(195, 188, 168, 0.38);
+  color: #2C2416;
+  box-shadow: inset 0 1px 3px rgba(120, 100, 60, 0.03);
+}
+
+.light .glass-pill {
+  background-color: rgba(235, 228, 212, 0.42);
+  backdrop-filter: blur(6px) saturate(140%);
+  -webkit-backdrop-filter: blur(6px) saturate(140%);
+  border: 1px solid rgba(195, 188, 168, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 253, 248, 0.45);
+  color: #2C2416;
+}
+
+/* ── Zinc 900 variants ────────────────────────────────────────── */
+.light .bg-zinc-900\/10 {
+  background-color: rgba(255, 253, 248, 0.16);
+  border-color: rgba(210, 202, 180, 0.3);
+}
+
+.light .bg-zinc-900\/30 {
+  background-color: rgba(255, 253, 248, 0.18);
+  border: 1px solid rgba(210, 202, 180, 0.35);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+
+.light .bg-zinc-900\/40 {
+  background-color: rgba(255, 253, 248, 0.20);
+  border: 1px solid rgba(210, 202, 180, 0.4);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+
+.light .bg-zinc-900 {
+  background-color: rgba(255, 253, 248, 0.14);
+  color: #2C2416;
+  border: 1px solid rgba(210, 202, 180, 0.5);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  box-shadow: 0 4px 20px rgba(120, 100, 60, 0.05), inset 0 1px 0 rgba(255, 253, 248, 0.7);
+}
+
+/* ── Zinc 800 variants (buttons/chips) ────────────────────────── */
+.light .bg-zinc-800 {
+  background-color: rgba(235, 228, 212, 0.6);
+  color: #2C2416;
+  border: 1px solid rgba(200, 192, 172, 0.5);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  box-shadow: 0 2px 8px rgba(120, 100, 60, 0.04), inset 0 1px 0 rgba(255, 253, 248, 0.6);
+}
+
+.light .bg-zinc-800:hover {
+  background-color: rgba(230, 224, 210, 0.7);
+  box-shadow: 0 4px 12px rgba(120, 100, 60, 0.06), inset 0 1px 0 rgba(255, 253, 248, 0.7);
+}
+
+.light .bg-zinc-800\/50 {
+  background-color: rgba(230, 224, 210, 0.5);
+  border: 1px solid rgba(210, 202, 180, 0.4);
+}
+
+.light .bg-zinc-800\/80 {
+  background-color: rgba(235, 228, 212, 0.65);
+  border: 1px solid rgba(210, 202, 180, 0.5);
+}
+
+/* ── Custom Zinc shades ───────────────────────────────────────── */
+.light .bg-zinc-850 {
+  background-color: rgba(230, 224, 210, 0.55);
+  color: #2C2416;
+  border: 1px solid rgba(210, 202, 180, 0.45);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+
+.light .bg-zinc-750 {
+  background-color: rgba(235, 228, 212, 0.5);
+  color: #2C2416;
+  border: 1px solid rgba(210, 202, 180, 0.4);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+
+/* ── Black overlay variants ───────────────────────────────────── */
+.light .bg-black\/30,
+.light .bg-black\/35,
+.light .bg-black\/40 {
+  background-color: rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+
+.light .bg-black\/60 {
+  background-color: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+
+.light .bg-black\/80 {
+  background-color: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+
+/* ── Inner section blocks (AccordionSection) ──────────────────── */
+.light .glass-section {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* ── Result container (more solid than others) ────────────────── */
+.light .glass-result {
+  background-color: rgba(255, 253, 248, 0.30);
+  border: 1px solid rgba(210, 202, 180, 0.60);
+  box-shadow: 0 1px 4px rgba(120, 100, 60, 0.06);
+}
+
+.light .bg-black {
+  background-color: rgba(255, 253, 248, 0.12);
+  color: #2C2416;
+}
+
+/* ── Colored dark variants ────────────────────────────────────── */
+.light .bg-red-950\/40 {
+  background-color: rgba(255, 210, 210, 0.3);
+  border-color: rgba(255, 180, 180, 0.35);
+}
+
+/* ── Borders ──────────────────────────────────────────────────── */
+.light .border-white\/5 {
+  border-color: rgba(210, 202, 180, 0.35);
+}
+
+.light .border-white\/10 {
+  border-color: rgba(210, 202, 180, 0.45);
+}
+
+/* ── Zinc border overrides ────────────────────────────────────── */
+.light .border-zinc-800 {
+  border-color: rgba(200, 192, 172, 0.5);
+}
+
+.light .border-zinc-700 {
+  border-color: rgba(200, 192, 172, 0.45);
+}
+
+.light .border-zinc-600 {
+  border-color: rgba(200, 192, 172, 0.5);
+}
+
+/* ── Text colors ──────────────────────────────────────────────── */
+.light h1,
+.light h2,
+.light h3,
+.light h4,
+.light h5,
+.light h6,
+.light .text-white,
+.light .text-zinc-100,
+.light .text-zinc-200 {
+  color: #2C2416;
+}
+
+.light p,
+.light span,
+.light label {
+  color: #3D3425;
+}
+
+.light .text-zinc-300 {
+  color: #3D3425;
+}
+
+.light .text-zinc-400 {
+  color: #6B5E4A;
+}
+
+.light .text-zinc-500 {
+  color: #8A7D6B;
+}
+
+.light .text-zinc-600 {
+  color: #6B5E4A;
+}
+
+/* ── Tags (format selector pills) ─────────────────────────────── */
+.light .tag {
+  background: rgba(235, 228, 212, 0.45);
+  border: 1px solid rgba(210, 202, 180, 0.4);
+  color: #3D3425;
+}
+
+.light .tag::before {
+  opacity: 0.7;
+}
+
+.light .tag:hover {
+  background: rgba(235, 228, 212, 0.6);
+  border-color: rgba(195, 188, 168, 0.5);
+  box-shadow: 0 4px 16px rgba(120, 100, 60, 0.06);
+}
+
+/* ── Sidebar nav items ────────────────────────────────────────── */
+.light .glass-sidebar button[class*="text-zinc-400"] {
+  background-color: rgba(210, 202, 180, 0.25);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(200, 192, 172, 0.3);
+  box-shadow: 0 1px 3px rgba(120, 100, 60, 0.04), inset 0 1px 0 rgba(255, 253, 248, 0.5);
+}
+
+.light .glass-sidebar button[class*="text-zinc-400"]:hover {
+  background-color: rgba(205, 198, 178, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-color: rgba(195, 188, 168, 0.4);
+  box-shadow: 0 2px 6px rgba(120, 100, 60, 0.06), inset 0 1px 0 rgba(255, 253, 248, 0.6);
+}
+
+/* ── Sidebar nav buttons — mesmo padrão do dark: hover visível em fundo claro
+   (o hover:bg-white/5 do dark é invisível sobre bege, então overlay escuro) ── */
+.light .glass-sidebar button:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────── */
+.light ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.light ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* ── Range slider thumb ───────────────────────────────────────── */
+.light .range-slider::-webkit-slider-thumb {
+  background: #2C2416;
+  box-shadow: 0 1px 4px rgba(120, 100, 60, 0.3);
+}
+
+.light .range-slider::-moz-range-thumb {
+  background: #2C2416;
+  box-shadow: 0 1px 4px rgba(120, 100, 60, 0.3);
+}
+
+/* Gray mode overrides — Frosted Glass (lighter gray) */
+.gray-mode {
+  background-color: #606878;
+  color: #e2e8f0;
+}
+
+.gray-mode .glass-card {
+  background: rgba(45, 52, 66, 0.70);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+
+.gray-mode .glass-card-hover:hover {
+  background: rgba(52, 60, 76, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+
+.gray-mode .glass-sidebar {
+  background: rgba(45, 52, 66, 0.70);
+  border-right: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15),
+    inset -1px 0 0 rgba(255, 255, 255, 0.06);
+}
+
+.gray-mode .glass-input {
+  background-color: rgba(40, 45, 55, 0.50);
+  backdrop-filter: blur(6px) saturate(140%);
+  -webkit-backdrop-filter: blur(6px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.12);
+  color: #e2e8f0;
+}
+
+.gray-mode .glass-pill {
+  background-color: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(6px) saturate(140%);
+  -webkit-backdrop-filter: blur(6px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+}
+
+.gray-mode .border-white\/5,
+.gray-mode .border-white\/10 {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Dual range slider ────────────────────────────────────────────── */
+.range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.range-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+  border-radius: 9999px;
+  pointer-events: none;
+}
+
+.range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  margin-top: -5px;
+  transition: transform 0.1s ease;
+  pointer-events: auto;
+}
+
+.range-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.range-slider::-webkit-slider-thumb:active {
+  transform: scale(1.3);
+}
+
+.range-slider::-moz-range-track {
+  height: 4px;
+  background: transparent;
+  border-radius: 9999px;
+  pointer-events: none;
+}
+
+.range-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transition: transform 0.1s ease;
+  pointer-events: auto;
+}
+
+.range-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+.range-slider::-moz-range-thumb:active {
+  transform: scale(1.3);
+}
+
+
+/* Barra indeterminada — downloads com recorte: o yt-dlp baixa o trecho via
+   ffmpeg sem emitir progresso até concluir (0% → 100% direto). Animação local. */
+@keyframes lf-indeterminate-slide {
+  0% { transform: translateX(-100%); opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { transform: translateX(400%); opacity: 0.4; }
+}
+.lf-indeterminate-bar {
+  background: var(--color-primary, #6366f1);
+  animation: lf-indeterminate-slide 1.4s ease-in-out infinite;
+}
+
+/* CONTAINER DO SLIDER */
+.slider-container {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  /* Margem negativa para anular os paddings laterais do container pai (p-4 = 16px no mobile) */
+  margin-left: -16px;
+  margin-right: -16px;
+  width: calc(100% + 32px);
+  overflow: hidden;
+  margin-top: 15px;
+  -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+}
+
+@media (min-width: 768px) {
+  .slider-container {
+    /* md:p-6 = 24px no desktop */
+    margin-left: -24px;
+    margin-right: -24px;
+    width: calc(100% + 48px);
+  }
+}
+
+/* Linha de scroll */
+.scroll-row {
+  display: flex;
+  gap: 10px;
+  width: max-content;
+  animation: scrollLeft 95s linear infinite;
+
+  /* Respiro interno para o hover não ser cortado pelo overflow:hidden */
+  padding-top: 12px;
+  padding-bottom: 12px;
+  margin-top: -6px;
+  margin-bottom: -6px;
+
+  /* Alinha as tags internamente com o conteúdo do app */
+  padding-left: 24px;
+  padding-right: 24px;
+
+  position: relative;
+  z-index: 2;
+}
+
+@keyframes scrollLeft {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+/* Marquee da faixa de plataformas: animado em todos os perfis (inclusive
+   efficient). É uma faixa pequena com translateX — custo de repaint baixo,
+   diferente dos blurs full-screen que o perfil efficient mantém estáticos. */
+.efficient .scroll-row {
+  animation: scrollLeft 95s linear infinite;
+}
+
+/* No Linux WebKitGTK software rasterizer, backdrop-filter forces full-surface
+   CPU repaints on every hover/scroll/cursor frame. Replace with solid/semi-opaque
+   surfaces to keep 60fps responsiveness with zero CPU lag. */
+.efficient .glass-card,
+.efficient .glass-result,
+.efficient .glass-chip,
+.efficient .glass-dropdown,
+.efficient .glass-panel,
+.efficient .glass-sidebar,
+.efficient .glass-input,
+.efficient .glass-pill,
+.efficient [class*="backdrop-blur"],
+.efficient .lf-surface-40,
+.efficient .lf-surface-30,
+.efficient .lf-surface-50 {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Sombras achatadas no efficient: sombras grandes (32-40px + inset) forçam
+   repaint caro por frame no scroll por software. Mantém relevo mínimo. */
+.efficient .glass-card,
+.efficient .glass-card-hover:hover,
+.efficient .glass-result {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
+}
+.efficient .glass-sidebar {
+  box-shadow: none !important;
+}
+
+/* Sombras utilitárias achatadas: shadow-md/lg/xl/2xl (até coloridas) forçam
+   repaint caro no scroll por software. Relevo mínimo, mesma linguagem. */
+.efficient .shadow-md,
+.efficient .shadow-lg,
+.efficient .shadow-xl,
+.efficient .shadow-2xl {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.30) !important;
+}
+
+/* Contenção de paint: seções fora da tela pulam render/paint no scroll.
+   Só em blocos estáticos (sem medição de altura/animação de saída). */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 480px;
+}
+
+
+
+/* ESTILO DAS TAGS */
+.tag {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 16px;
+  border-radius: 10px;
+  background: #22242b;
+  border: 1px solid #30333b;
+  color: #d9d9d9;
+  font-size: 16.8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.22s;
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.tag::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--c);
+  transition: 0.22s;
+}
+
+.tag svg {
+  color: var(--c);
+  transition: 0.22s;
+  flex-shrink: 0;
+}
+
+.tag:hover {
+  border-color: var(--c);
+  transform: translateY(-4px);
+  z-index: 10;
+}
+
+.tag:hover i {
+  transform: scale(1.15);
+}
+
+/* CORES DAS PLATAFORMAS */
+.youtube {
+  --c: #FF0033;
+}
+
+.tiktok {
+  --c: #25F4EE;
+}
+
+.instagram {
+  --c: #E1306C;
+}
+
+.facebook {
+  --c: #1877F2;
+}
+
+.twitter {
+  --c: #ffffff;
+}
+
+.soundcloud {
+  --c: #ff7700;
+}
+
+.twitch {
+  --c: #9146FF;
+}
+
+.reddit {
+  --c: #FF4500;
+}
+
+.vimeo {
+  --c: #00ADEF;
+}
+
+.kick {
+  --c: #53FC18;
+}
+
+.discord {
+  --c: #5865F2;
+}
+
+.pinterest {
+  --c: #BD081C;
+}
+
+.linkedin {
+  --c: #0A66C2;
+}
+
+.github {
+  --c: #f0f6fc;
+}
+
+.patreon {
+  --c: #FF424D;
+}
+
+.telegram {
+  --c: #24A1DE;
+}
+
+.snapchat {
+  --c: #FFFC00;
+}
+
+.steam {
+  --c: #66c0f4;
+}
+
+.threads {
+  --c: #ffffff;
+}
+
+.medium {
+  --c: #00ab6c;
+}
+
+.behance {
+  --c: #0057ff;
+}
+
+.dribbble {
+  --c: #ea4c89;
+}
+
+.gitlab {
+  --c: #FC6D26;
+}
+
+.tumblr {
+  --c: #36465D;
+}
+
+.flickr {
+  --c: #0063db;
+}
+
+.mastodon {
+  --c: #6364FF;
+}
+
+.bandcamp {
+  --c: #629aa9;
+}
+
+/* ═══════════════════════════════════════════════════════ */
+/* PARTICLE BACKGROUND                                     */
+/* ═══════════════════════════════════════════════════════ */
+
+.particle {
+  position: absolute;
+  pointer-events: none;
+  filter: blur(1.5px);
+}
+
+.p-tiny {
+  width: 0.8px;
+  height: 0.8px;
+  opacity: 0.3;
+}
+
+.p-small {
+  width: 1.2px;
+  height: 1.2px;
+  opacity: 0.4;
+}
+
+.p-medium {
+  width: 2px;
+  height: 2px;
+  opacity: 0.5;
+}
+
+.p-large {
+  width: 3px;
+  height: 3px;
+  opacity: 0.6;
+}
+
+.p-xlarge {
+  width: 4px;
+  height: 4px;
+  opacity: 0.5;
+}
+
+@keyframes riseOrganic {
+  0% {
+    transform: translateY(20px) translateX(0) rotate(45deg);
+    opacity: 0;
+  }
+
+  8% {
+    opacity: inherit;
+  }
+
+  50% {
+    transform: translateY(-50vh) translateX(12px) rotate(45deg);
+  }
+
+  85% {
+    opacity: inherit;
+  }
+
+  100% {
+    transform: translateY(-105vh) translateX(-6px) rotate(45deg);
+    opacity: 0;
+  }
+}
+
+@keyframes colorShift {
+
+  0%,
+  100% {
+    background: #ff3a3a;
+    box-shadow: 0 0 14px 4px rgba(255, 58, 58, 0.6);
+  }
+
+  50% {
+    background: #4d5fff;
+    box-shadow: 0 0 14px 4px rgba(77, 95, 255, 0.6);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════ */
+/* WHITE THEME — Visual Overrides                                                 */
+/* Solid white backgrounds, clean buttons, accent-driven active states            */
+/* Scoped entirely under .white — ZERO contamination to .light or dark themes     */
+/* ═══════════════════════════════════════════════════════════════════════════════ */
+
+.white {
+  background-color: transparent;
+  color: #141821;
+}
+
+/* ── Glass Utilities — Frosted Glass (slightly more opaque than bege) ──────── */
+.white .glass-card {
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(200, 210, 225, 0.60);
+  color: #0f172a;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.3s ease;
+}
+
+.white .glass-card-hover:hover {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(190, 200, 215, 0.70);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.06);
+}
+
+.white .glass-sidebar {
+  background: rgba(255, 255, 255, 0.75);
+  border-right: 1px solid rgba(200, 210, 225, 0.60);
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.04);
+}
+
+.white .glass-input {
+  background-color: rgba(255, 255, 255, 0.50);
+  backdrop-filter: blur(6px) saturate(140%);
+  -webkit-backdrop-filter: blur(6px) saturate(140%);
+  border: 1px solid rgba(190, 200, 215, 0.45);
+  color: #141821;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.white .glass-pill {
+  background-color: rgba(220, 226, 236, 0.40);
+  backdrop-filter: blur(6px) saturate(140%);
+  -webkit-backdrop-filter: blur(6px) saturate(140%);
+  border: 1px solid rgba(190, 200, 215, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  color: #141821;
+}
+
+/* ── Surface utility overrides — PURE WHITE ──────────────────────────── */
+.white .lf-surface-40,
+.white .lf-surface-30,
+.white .lf-surface-20,
+.white .lf-surface-10,
+.white .lf-surface-50,
+.white .lf-surface-raised {
+  background-color: #FFFFFF;
+  border-color: rgba(190, 200, 215, 0.5);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+/* ── Inner section blocks (AccordionSection) — LIGHT GRAY ─────────────── */
+.white .glass-section {
+  background-color: #F7F8FA;
+  border-color: rgba(190, 200, 215, 0.5);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Remove all shadows from buttons inside sections */
+.white .glass-section button {
+  box-shadow: none;
+}
+
+/* ── Result container ────────────────────────────────────────────────────── */
+.white .glass-result {
+  background-color: #F7F8FA;
+  border: 1px solid rgba(190, 200, 215, 0.60);
+  box-shadow: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* WHITE THEME — BUTTON SYSTEM                                               */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Header button (accordion toggle) — transparent ──────────────────────── */
+.white .glass-section > button:first-child {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  color: #141821;
+}
+.white .glass-section > button:first-child:hover {
+  background-color: rgba(190, 200, 215, 0.15);
+}
+
+/* ── INACTIVE CHIPS (.lf-opt) — white bg, gray border, dark text ─────────── */
+.white .glass-section .lf-opt:not(.active),
+.white .glass-card .lf-opt:not(.active) {
+  background-color: #FFFFFF;
+  border-color: #E2E8F0;
+  color: #1E293B;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* Hover on inactive chips — slightly darker border */
+.white .glass-section .lf-opt:hover:not(.active),
+.white .glass-card .lf-opt:hover:not(.active) {
+  background-color: #FFFFFF;
+  border-color: #CBD5E1;
+  color: #0F172A;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+/* ── TEMPLATE BUTTONS HOVER — accent border + accent text on hover ────────── */
+.white .glass-section button.lf-surface-raised.lf-border:not(.lf-opt):not(:first-child):hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background-color: rgba(var(--color-primary-rgb), 0.06);
+}
+
+/* ── ACTIVE CHIPS (.lf-opt.active) — SOLID primary fill, dark text ────────── */
+.white .glass-section .lf-opt.active,
+.white .glass-card .lf-opt.active {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #0F172A;
+  box-shadow: none;
+  font-weight: 600;
+}
+
+/* Hover on active chips — darken bg, keep dark text */
+.white .glass-section .lf-opt.active:hover,
+.white .glass-card .lf-opt.active:hover {
+  background-color: var(--color-primary);
+  color: #0F172A;
+  filter: brightness(0.92);
+}
+
+/* ── SettingsView (.glass-card) — neutral buttons ────────────────────────── */
+.white .glass-card button:not(.lf-opt):not([class*="bg-"]):not([role="switch"]) {
+  background-color: #FFFFFF;
+  border-color: #E2E8F0;
+  color: #1E293B;
+}
+.white .glass-card button:not(.lf-opt):not([class*="bg-"]):not([role="switch"]):hover {
+  background-color: #FFFFFF;
+  border-color: #CBD5E1;
+  color: #0F172A;
+}
+
+/* SettingsView buttons with accent border class (active state) */
+.white .glass-card button.border-indigo-500,
+.white .glass-card button.border-emerald-500,
+.white .glass-card button.border-amber-500,
+.white .glass-card button.border-rose-500,
+.white .glass-card button.border-violet-500,
+.white .glass-card button.border-sky-500,
+.white .glass-card button.border-teal-500,
+.white .glass-card button.border-fuchsia-500,
+.white .glass-card button.border-orange-500,
+.white .glass-card button.border-cyan-500,
+.white .glass-card button.border-lime-500,
+.white .glass-card button.border-red-500,
+.white .glass-card button.border-pink-500,
+.white .glass-card button.border-slate-400 {
+  background-color: rgba(var(--color-primary-rgb), 0.06);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: none;
+  font-weight: 600;
+}
+
+/* Hover on active settings buttons */
+.white .glass-card button.border-indigo-500:hover,
+.white .glass-card button.border-emerald-500:hover,
+.white .glass-card button.border-amber-500:hover,
+.white .glass-card button.border-rose-500:hover,
+.white .glass-card button.border-violet-500:hover,
+.white .glass-card button.border-sky-500:hover,
+.white .glass-card button.border-teal-500:hover,
+.white .glass-card button.border-fuchsia-500:hover,
+.white .glass-card button.border-orange-500:hover,
+.white .glass-card button.border-cyan-500:hover,
+.white .glass-card button.border-lime-500:hover,
+.white .glass-card button.border-red-500:hover,
+.white .glass-card button.border-pink-500:hover,
+.white .glass-card button.border-slate-400:hover {
+  background-color: rgba(var(--color-primary-rgb), 0.10);
+}
+
+/* ── Override dark-mode hover:bg-zinc-800 / hover:bg-zinc-850 ─────────────── */
+.white .glass-section button.hover\:bg-zinc-800,
+.white .glass-section button.hover\:bg-zinc-850,
+.white .lf-surface-40 button.hover\:bg-zinc-800,
+.white .lf-surface-40 button.hover\:bg-zinc-850,
+.white .lf-surface-30 button.hover\:bg-zinc-800,
+.white .lf-surface-30 button.hover\:bg-zinc-850,
+.white .lf-surface-raised button.hover\:bg-zinc-800,
+.white .lf-surface-raised button.hover\:bg-zinc-850 {
+  background-color: #FFFFFF;
+}
+
+/* ── Zinc variants ────────────────────────────────────────────────────────── */
+.white .bg-zinc-900\/10 {
+  background-color: rgba(255, 255, 255, 0.16);
+  border-color: rgba(190, 200, 215, 0.3);
+}
+.white .bg-zinc-900\/30 {
+  background-color: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(190, 200, 215, 0.35);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+.white .bg-zinc-900\/40 {
+  background-color: rgba(255, 255, 255, 0.20);
+  border: 1px solid rgba(190, 200, 215, 0.4);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+.white .bg-zinc-900 {
+  background-color: rgba(255, 255, 255, 0.14);
+  color: #141821;
+  border: 1px solid rgba(190, 200, 215, 0.5);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.white .bg-zinc-800 {
+  background-color: rgba(230, 235, 243, 0.6);
+  color: #141821;
+  border: 1px solid rgba(180, 190, 205, 0.5);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.white .bg-zinc-800:hover {
+  background-color: rgba(225, 230, 240, 0.7);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.white .bg-zinc-800\/50 {
+  background-color: rgba(225, 231, 240, 0.5);
+  border: 1px solid rgba(190, 200, 215, 0.4);
+}
+.white .bg-zinc-800\/80 {
+  background-color: rgba(235, 239, 246, 0.65);
+  border: 1px solid rgba(190, 200, 215, 0.5);
+}
+.white .bg-zinc-850 {
+  background-color: rgba(225, 231, 240, 0.55);
+  color: #141821;
+  border: 1px solid rgba(190, 200, 215, 0.45);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+.white .bg-zinc-750 {
+  background-color: rgba(220, 226, 236, 0.5);
+  color: #141821;
+  border: 1px solid rgba(190, 200, 215, 0.4);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+
+/* ── Black overlay variants ──────────────────────────────────────────────── */
+.white .bg-black\/30,
+.white .bg-black\/35,
+.white .bg-black\/40 {
+  background-color: rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+.white .bg-black\/60 {
+  background-color: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+.white .bg-black\/80 {
+  background-color: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+}
+.white .bg-black {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #141821;
+}
+
+/* ── Colored dark variants ───────────────────────────────────────────────── */
+.white .bg-red-950\/40 {
+  background-color: rgba(255, 210, 210, 0.3);
+  border-color: rgba(255, 180, 180, 0.35);
+}
+
+/* ── Borders ──────────────────────────────────────────────────────────────── */
+.white .border-white\/5 {
+  border-color: rgba(190, 200, 215, 0.35);
+}
+.white .border-white\/10 {
+  border-color: rgba(190, 200, 215, 0.45);
+}
+.white .border-zinc-800 {
+  border-color: rgba(180, 190, 205, 0.5);
+}
+.white .border-zinc-700 {
+  border-color: rgba(180, 190, 205, 0.45);
+}
+.white .border-zinc-600 {
+  border-color: rgba(190, 200, 215, 0.5);
+}
+
+/* ── Text colors ──────────────────────────────────────────────────────────── */
+.white h1, .white h2, .white h3, .white h4, .white h5, .white h6,
+.white .text-white, .white .text-zinc-100, .white .text-zinc-200 {
+  color: #141821;
+}
+.white p, .white span, .white label {
+  color: #2a3040;
+}
+.white .text-zinc-300 { color: #1e2535; }
+.white .text-zinc-400 { color: #454d60; }
+.white .text-zinc-500 { color: #6b7280; }
+.white .text-zinc-600 { color: #3a4050; }
+
+/* ── Tags ─────────────────────────────────────────────────────────────────── */
+.white .tag {
+  background: rgba(225, 231, 240, 0.45);
+  border: 1px solid rgba(190, 200, 215, 0.4);
+  color: #1e2535;
+}
+.white .tag::before { opacity: 0.7; }
+.white .tag:hover {
+  background: rgba(220, 226, 236, 0.6);
+  border-color: rgba(170, 182, 200, 0.5);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+/* ── Sidebar nav items ────────────────────────────────────────────────────── */
+.white .glass-sidebar button[class*="text-zinc-400"] {
+  background-color: rgba(190, 198, 215, 0.25);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(180, 190, 205, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.white .glass-sidebar button[class*="text-zinc-400"]:hover {
+  background-color: rgba(185, 195, 212, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-color: rgba(170, 182, 200, 0.4);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+/* ── Sidebar nav buttons — mesmo padrão do dark: hover visível em fundo claro ── */
+.white .glass-sidebar button:hover {
+  background-color: rgba(20, 24, 33, 0.06);
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+.white ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+}
+.white ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* ── Range slider thumb ───────────────────────────────────────────────────── */
+.white .range-slider::-webkit-slider-thumb {
+  background: #141821;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+.white .range-slider::-moz-range-thumb {
+  background: #141821;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Surface hover ────────────────────────────────────────────────────────── */
+.white .lf-surface-hover:hover {
+  background-color: rgba(240, 243, 248, 0.55);
+}
+
+/* ── Button utility overrides ─────────────────────────────────────────────── */
+.white .lf-btn-outline:hover {
+  background-color: rgba(240, 243, 248, 0.50);
+}
+.white .lf-btn-outline.primary {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.white .lf-nav-item:hover {
+  background-color: rgba(240, 243, 248, 0.50);
+}
+.white .lf-nav-item.active {
+  background-color: rgba(var(--color-primary-rgb), 0.08);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.white .lf-nav-item.active svg {
+  color: var(--color-primary);
+}
+
+@keyframes shimmer {
+  from { left: -10%; }
+  to { left: 110%; }
+}
