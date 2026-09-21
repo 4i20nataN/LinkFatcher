@@ -463,11 +463,17 @@ export const DownloadManager: React.FC = () => {
                       {platform && (
                         <PlatformBadge platformId={item.platform} name={platform.name} color={platform.color} variant="inline" />
                       )}
-                      {/* Format ext chip — container de saída escolhido (merge/audio), não o da fonte */}
+                      {/* Format ext chip — concluído: extensão do ARQUIVO real
+                          (stream único ignora --merge-output-format, ex. webm
+                          com tag MP4); pendente: container prometido */}
                       {(() => {
-                        const outExt = item.audioOnly
-                          ? item.audioFormat
-                          : (item.mergeOutputFormat || item.format.ext);
+                        const doneExt = item.status === 'completed' && item.filePath
+                          ? (item.filePath.split('.').pop() || '')
+                          : '';
+                        const outExt = doneExt
+                          || (item.audioOnly
+                            ? item.audioFormat
+                            : (item.mergeOutputFormat || item.format.ext));
                         return outExt ? (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-white/10 lf-text-secondary border border-white/10">
                             {outExt.toUpperCase()}

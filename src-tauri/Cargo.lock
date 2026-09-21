@@ -2346,10 +2346,9 @@ dependencies = [
 
 [[package]]
 name = "linkfetcher"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "hex",
- "lzma-rs",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -2365,6 +2364,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tokio",
+ "xz2",
  "zip 2.4.2",
 ]
 

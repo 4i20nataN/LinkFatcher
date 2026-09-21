@@ -2,10 +2,9 @@
 //! Contrato: docs/reference/media-binaries.md (zero-config, SHA + rename atômico).
 //!
 //! Pins verificados em 2026-09-18 (Step 1 do plano):
-//! - yt-dlp tag fixa `2026.08.19` (release imutável; assets + tamanhos abaixo).
-//! - BtbN só publica a tag rolante `latest` (autobuilds datados não têm assets
-//!   versionados) → FFMPEG_TAG = "latest" com assets `n8.1` pinados por nome +
-//!   SHA-256 do `checksums.sha256` dessa tag. Re-pin obrigatório a cada release.
+//! - yt-dlp tag fixa `2026.08.19` (release imutável; verificado no SHA2-512SUMS).
+//! - BtbN só publica a tag rolante `latest` → ffmpeg confere no checksums.sha256
+//!   da hora (pins só de fallback; re-pin não trava mais release).
 
 use std::path::{Path, PathBuf};
 use sha2::Digest;
@@ -312,6 +311,20 @@ fn parse_sums(text: &str, asset: &str) -> Option<String> {
     })
 }
 
+/// SHA pinado: fallback se o checksums publicado não vier. Pode envelhecer
+/// (tag rolante) — o caminho primário é sempre a lista da hora.
+#[cfg(target_os = "windows")]
+fn pinned_ffmpeg_sha() -> &'static str {
+    FFMPEG_WIN_SHA256
+}
+
+/// SHA pinado: fallback se o checksums publicado não vier. Pode envelhecer
+/// (tag rolante) — o caminho primário é sempre a lista da hora.
+#[cfg(not(target_os = "windows"))]
+fn pinned_ffmpeg_sha() -> &'static str {
+    FFMPEG_LINUX_SHA256
+}
+
 #[cfg(unix)]
 fn make_executable(p: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
@@ -498,62 +511,36 @@ fn install_ffmpeg(
     app: &AppHandle,
     total: u64,
 ) -> Result<(), String> {
-    // Descomprime em streaming para um .tar temporário (memória constante;
-    // antes: ~150 MB do xz + ~500 MB do tar em RAM) com progresso real.
-    let tmp_tar = part.with_extension("tar");
+    // Stream direto xz → tar (xz2/liblzma em C + sem .tar temporário de
+    // ~500 MB): menos ~1 GB de IO em disco e decode multix mais rápido.
+    // Progresso real pelos bytes de entrada lidos.
     let src = match std::fs::File::open(part) {
         Ok(f) => f,
         Err(e) => return Err(e.to_string()),
     };
-    let mut reader = ProgressReader {
+    let reader = ProgressReader {
         inner: std::io::BufReader::new(src),
         app: app.clone(),
         total,
         read: 0,
         last_percent: u8::MAX,
     };
-    let mut tmpf = match std::fs::File::create(&tmp_tar) {
-        Ok(f) => f,
-        Err(e) => return Err(e.to_string()),
-    };
-    if let Err(e) = lzma_rs::xz_decompress(&mut reader, &mut tmpf) {
-        drop(tmpf);
-        let _ = std::fs::remove_file(&tmp_tar);
-        return Err(e.to_string());
-    }
-    drop(tmpf);
-    // Varre o tar com early-exit ao achar os dois binários.
-    let file = match std::fs::File::open(&tmp_tar) {
-        Ok(f) => f,
-        Err(e) => {
-            let _ = std::fs::remove_file(&tmp_tar);
-            return Err(e.to_string());
-        }
-    };
-    let mut archive = tar::Archive::new(file);
-    let entries = match archive.entries() {
-        Ok(e) => e,
-        Err(e) => {
-            let _ = std::fs::remove_file(&tmp_tar);
-            return Err(e.to_string());
-        }
-    };
+    let decoder = xz2::read::XzDecoder::new(reader);
+    let mut archive = tar::Archive::new(decoder);
     let mut got_ffmpeg = false;
     let mut got_probe = false;
+    let entries = match archive.entries() {
+        Ok(e) => e,
+        Err(e) => return Err(e.to_string()),
+    };
     for entry in entries {
         let mut entry = match entry {
             Ok(e) => e,
-            Err(e) => {
-                let _ = std::fs::remove_file(&tmp_tar);
-                return Err(e.to_string());
-            }
+            Err(e) => return Err(e.to_string()),
         };
         let name = match entry.path() {
             Ok(p) => p.to_string_lossy().into_owned(),
-            Err(e) => {
-                let _ = std::fs::remove_file(&tmp_tar);
-                return Err(e.to_string());
-            }
+            Err(e) => return Err(e.to_string()),
         };
         let dest = if name.ends_with("bin/ffmpeg") {
             got_ffmpeg = true;
@@ -566,7 +553,6 @@ fn install_ffmpeg(
         };
         if let Some(d) = dest {
             if let Err(e) = entry.unpack(d) {
-                let _ = std::fs::remove_file(&tmp_tar);
                 return Err(e.to_string());
             }
         }
@@ -574,7 +560,6 @@ fn install_ffmpeg(
             break;
         }
     }
-    let _ = std::fs::remove_file(&tmp_tar);
     if !got_ffmpeg {
         return Err("bin/ffmpeg não encontrado no tar.xz".into());
     }
@@ -611,12 +596,22 @@ async fn ensure_ffmpeg(client: &reqwest::Client, app: &AppHandle) -> Result<Path
         .await
         .map_err(fail)?;
     emit_progress(app, "progress", "ffmpeg", received, received, Some("Verificando integridade do ffmpeg…"), None);
-    #[cfg(target_os = "windows")]
-    let expected_sha = FFMPEG_WIN_SHA256;
-    #[cfg(not(target_os = "windows"))]
-    let expected_sha = FFMPEG_LINUX_SHA256;
+    // Tag `latest` é rolante: confere contra o checksums.sha256 publicado na
+    // hora (mesma disciplina do SHA2-512SUMS do yt-dlp); pinado só de fallback
+    // se a lista não vier — pin nunca mais trava release nova.
+    let sums_url = format!(
+        "https://github.com/BtbN/FFmpeg-Builds/releases/download/{FFMPEG_TAG}/checksums.sha256"
+    );
+    let expected_sha: String = match client.get(&sums_url).send().await {
+        Ok(resp) => match resp.text().await {
+            Ok(text) => parse_sums(&text, FFMPEG_ASSET)
+                .unwrap_or_else(|| pinned_ffmpeg_sha().to_owned()),
+            Err(_) => pinned_ffmpeg_sha().to_owned(),
+        },
+        Err(_) => pinned_ffmpeg_sha().to_owned(),
+    };
     let actual = hex::encode(hasher.finalize());
-    if actual != expected_sha {
+    if actual != expected_sha.to_lowercase() {
         return Err(fail("ffmpeg: SHA-256 não confere".into()));
     }
     // Extrai para temp + rename atômico pós-hash, como no reference.
@@ -687,4 +682,24 @@ pub async fn ytdlp_ensure_binaries(app: AppHandle) -> Result<(), String> {
         ENSURE_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_sums_btbn_format() {
+        let text = "469a44b4d951eae7e6f6b61858e948104d541a631322ef26efc5e17b3a521062  ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz\n\
+            3fb73caf23f562bffb1db4c1218c7f3a8c9e6346b55d95a7d5d223b8afab802d *ffmpeg-n8.1-latest-win64-gpl-8.1.zip\n";
+        assert_eq!(
+            parse_sums(text, "ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz"),
+            Some("469a44b4d951eae7e6f6b61858e948104d541a631322ef26efc5e17b3a521062".to_owned())
+        );
+        assert_eq!(
+            parse_sums(text, "ffmpeg-n8.1-latest-win64-gpl-8.1.zip"),
+            Some("3fb73caf23f562bffb1db4c1218c7f3a8c9e6346b55d95a7d5d223b8afab802d".to_owned())
+        );
+        assert_eq!(parse_sums(text, "inexistente.tar.xz"), None);
+    }
 }

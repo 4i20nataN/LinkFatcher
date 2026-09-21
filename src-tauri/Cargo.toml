@@ -1,6 +1,6 @@
 [package]
 name = "linkfetcher"
-version = "1.2.0"
+version = "1.2.1"
 edition = "2021"
 
 [build-dependencies]
@@ -14,7 +14,9 @@ tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "stream"] }
 zip = "2"
 tar = "0.4"
-lzma-rs = "0.3"
+# xz2 (já vinha via zip): decode xz em C + API de stream, que permite
+# extrair direto sem o .tar temporário de ~500 MB.
+xz2 = "0.1"
 sha2 = "0.10"
 hex = "0.4"
 tauri-plugin-single-instance = "2"
@@ -38,5 +40,5 @@ strip = true
 
 # Dev: otimiza só o gargalo do setup (decode xz single-thread) sem
 # prejudicar o tempo de compilação/incrementalidade do resto.
-[profile.dev.package.lzma-rs]
+[profile.dev.package.lzma-sys]
 opt-level = 2
