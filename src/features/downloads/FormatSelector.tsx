@@ -395,7 +395,11 @@ export const FormatSelector = React.memo(function FormatSelector({ mediaInfo, on
     writeThumbnail: false,
     embedThumbnail: false,
     embedMetadata: false,
-    concurrentFragments: 0,
+    // 8 fragmentos paralelos (padrão do yt-dlp é 1): satura melhor links
+    // rápidos e dilui o throttle por conexão do YouTube (se 1 trava, as
+    // outras 7 seguram o agregado). Moderado p/ não forçar 429 em IP
+    // já limitado; limite de banda continua opt-in (bandLimit = 0).
+    concurrentFragments: 8,
     retries: 0,
     restrictFilenames: false,
     noOverwrites: false,

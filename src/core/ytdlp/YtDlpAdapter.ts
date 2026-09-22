@@ -89,7 +89,7 @@ export async function probeUrlWithAdapter(options: ProbeOptions): Promise<any> {
   throw new Error('No transport available (desktop only)');
 }
 
-export async function probePlaylistWithAdapter(options: { url: string; cookies?: string; cookiesFromBrowser?: string; proxy?: string }): Promise<any> {
+export async function probePlaylistWithAdapter(options: { url: string; proxy?: string }): Promise<any> {
   if (isTauri()) {
     return callTauri<any>('ytdlp_probe_playlist', options);
   }

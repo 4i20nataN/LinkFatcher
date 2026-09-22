@@ -50,7 +50,6 @@ export interface DownloadItem {
   url: string;
   error?: string;
   filePath?: string;
-  cookiesFromBrowser?: string;
   finalArgs?: string[];
 }
 
@@ -89,8 +88,6 @@ export interface DownloadOptions {
   // FPS limit
   fpsMax?: number;
   // Auth options
-  cookies?: string;
-  cookiesFromBrowser?: string;
   proxy?: string;
   ffmpegLocation?: string;
   // Rate limiting

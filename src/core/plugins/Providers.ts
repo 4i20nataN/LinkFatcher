@@ -7,7 +7,7 @@ import { YtDlpProvider } from './YtDlpProvider';
 // Helper to generate a random number within a range
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
-async function probeWithYtdlp(url: string, options?: { cookies?: string; proxy?: string }): Promise<Record<string, unknown>> {
+async function probeWithYtdlp(url: string, options?: { proxy?: string }): Promise<Record<string, unknown>> {
   return probeUrlWithAdapter({ url, ...options });
 }
 
@@ -481,7 +481,7 @@ export function mockSearchYouTube(query: string): SearchResult[] {
  */
 export async function probePlaylistFull(
   url: string,
-  options?: { cookies?: string; cookiesFromBrowser?: string; proxy?: string }
+  options?: { proxy?: string }
 ): Promise<PlaylistInfo> {
   const result = await probePlaylistWithAdapter({ url, ...options });
 

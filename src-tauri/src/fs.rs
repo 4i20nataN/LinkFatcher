@@ -30,6 +30,46 @@ pub fn unregister_cancel(id: &str) -> Option<std::sync::Arc<tokio::sync::Mutex<C
     g.remove(id)
 }
 
+/// Intenção de limpeza: ids cujo `.part` deve ser apagado quando a task
+/// `ytdlp_download` terminar. `pause` NÃO marca (resume reaproveita o
+/// `.part`); `cancel` definitivo marca via `ytdlp_cancel(cleanup=true)`.
+static CLEANUP_INTENT: LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
+fn mark_cleanup_intent(id: &str) {
+    CLEANUP_INTENT.lock().unwrap().insert(id.to_owned());
+}
+
+/// Consome a intenção (true = havia pedido de limpeza).
+fn take_cleanup_intent(id: &str) -> bool {
+    CLEANUP_INTENT.lock().unwrap().remove(id)
+}
+
+/// Últimos destinos capturados por download id (todos os `Destination:`
+/// vistos no stdout — vídeo + áudio separados geram arquivos distintos).
+/// Mantido após falha para permitir `ytdlp_cleanup` post-mortem e resume;
+/// descartado no sucesso. Só guarda nomes (a deleção valida o diretório).
+static LAST_PATHS: LazyLock<std::sync::Mutex<std::collections::HashMap<String, Vec<String>>>> =
+    LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+fn remember_download_path(id: &str, path: &str) {
+    let mut g = LAST_PATHS.lock().unwrap();
+    if g.len() > 1000 {
+        g.clear();
+    }
+    let v = g.entry(id.to_owned()).or_default();
+    if !v.contains(&path.to_owned()) {
+        v.push(path.to_owned());
+        if v.len() > 8 {
+            v.remove(0);
+        }
+    }
+}
+
+fn forget_download_paths(id: &str) -> Option<Vec<String>> {
+    LAST_PATHS.lock().unwrap().remove(id)
+}
+
 /// Inicializar mapa via `tauri::State` (opcional, LazyLock já inicializa).
 #[allow(dead_code)]
 pub fn init_cancel_map(_state: std::sync::Mutex<CancelMap>) {
@@ -338,15 +378,68 @@ async fn ffmpeg_cut_local(
     Ok(())
 }
 
+/// Sufixos de artefatos temporários do yt-dlp/ffmpeg — nunca são entregáveis.
+/// Usado para (a) não eleger lixo como `latest_downloaded_file` e
+/// (b) limpar parciais no cancelamento definitivo.
+fn is_temp_artifact_name(name: &str) -> bool {
+    name.contains(".part")
+        || name.ends_with(".ytdl")
+        || name.ends_with(".temp")
+        || name.ends_with(".tmp")
+        || name.ends_with(".new")
+        || name.contains(".cuttmp.")
+        || name.ends_with(".cuttmp")
+        || name.contains("-Frag")
+}
+
+/// Apaga as variantes temporárias de um caminho-base (`base.part`,
+/// `base.ytdl`, `base.cutmp.*`, fragmentos `-Frag*` etc). Nunca apaga o
+/// arquivo final — exceto se o próprio base já for um artefato (ex.
+/// `"x.mp4.part"` capturado no stdout). Retorna quantos arquivos removeu.
+fn remove_temp_variants(base: &Path) -> u32 {
+    let mut removed = 0u32;
+    // O próprio base pode ser um artefato temporário.
+    if let Some(name) = base.file_name().and_then(|s| s.to_str()) {
+        if is_temp_artifact_name(name) && std::fs::remove_file(base).is_ok() {
+            removed += 1;
+        }
+    }
+    for suffix in [".part", ".ytdl", ".temp", ".tmp", ".new"] {
+        let p = PathBuf::from(format!("{}{suffix}", base.to_string_lossy()));
+        if std::fs::remove_file(&p).is_ok() {
+            removed += 1;
+        }
+    }
+    // `.cuttmp.*` e fragmentos `-Frag*` compartilham o prefixo do base.
+    if let (Some(parent), Some(stem)) = (
+        base.parent(),
+        base.file_name().and_then(|s| s.to_str()),
+    ) {
+        if let Ok(entries) = std::fs::read_dir(parent) {
+            for e in entries.flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if name.starts_with(stem)
+                    && name.len() > stem.len()
+                    && (name.contains(".cuttmp.") || name.contains("-Frag"))
+                    && std::fs::remove_file(e.path()).is_ok()
+                {
+                    removed += 1;
+                }
+            }
+        }
+    }
+    removed
+}
+
 /// `ytdlp_download` — spawna yt-dlp com argv canônico + ffmpeg se presente,
 /// parseia stdout para progresso e arquivos gerados, aguarda o término do processo,
 /// emite `yt-dlp-progress` events (compat Electron) + `binary-download`,
 /// retorna caminho do arquivo baixado ou erro.
 ///
 /// Recorte (`download_sections`): baixa o arquivo CHEIO pelo yt-dlp nativo
-/// (rápido, progresso real, resume, cookies) e corta local com ffmpeg
+/// (rápido, progresso real, resume) e corta local com ffmpeg
 /// (`-c copy`, segundos). NÃO repassa `--download-sections`: ele delegaria o
-/// fetch ao ffmpeg remoto (1 conexão, sem cliente/cookies do yt-dlp → 403 e
+/// fetch ao ffmpeg remoto (1 conexão, sem cliente do yt-dlp → 403 e
 /// lerdeza no YouTube, stdout mudo, sem resume).
 #[tauri::command]
 pub async fn ytdlp_download(
@@ -360,6 +453,9 @@ pub async fn ytdlp_download(
         .or(payload)
         .ok_or_else(|| "Nenhum parâmetro fornecido para download (esperado options, params ou payload)".to_string())?;
     eprintln!("[ytdlp_download] START id={} url={}", params.id, params.url);
+    // Intenção de limpeza de uma sessão anterior com o mesmo id não pode
+    // vazar para esta (retry reusa o id): o .part é necessário p/ resume.
+    take_cleanup_intent(&params.id);
 
     // Resolve binário yt-dlp via binary.rs
     let ytdlp_bin = crate::ytdlp::binary::ytdlp_path(&app).map_err(|e| {
@@ -523,15 +619,18 @@ pub async fn ytdlp_download(
             );
         } else if let Some(dest) = parse_destination(trimmed) {
             eprintln!("[ytdlp_download] captured destination: {}", dest);
+            remember_download_path(&download_id, &dest);
             captured_filepath = Some(dest);
         } else if let Some(merged) = parse_merge(trimmed) {
             eprintln!("[ytdlp_download] captured merged file: {}", merged);
+            remember_download_path(&download_id, &merged);
             captured_filepath = Some(merged);
         } else if trimmed.contains("has already been downloaded") {
             if let Some(start) = trimmed.find("[download] ") {
                 if let Some(end) = trimmed.find(" has already been downloaded") {
                     let path = trimmed[start + 11..end].trim().to_owned();
                     eprintln!("[ytdlp_download] captured already downloaded file: {}", path);
+                    remember_download_path(&download_id, &path);
                     captured_filepath = Some(path);
                 }
             }
@@ -621,6 +720,9 @@ pub async fn ytdlp_download(
                     "size": size,
                 }),
             );
+            // Sucesso: nada a limpar depois; descarta o rastreio de parciais.
+            let _ = forget_download_paths(&download_id);
+            let _ = take_cleanup_intent(&download_id);
 
             Ok(final_path.unwrap_or_default())
         }
@@ -632,6 +734,17 @@ pub async fn ytdlp_download(
             };
             eprintln!("[ytdlp_download] Process failed: {}", err_msg);
 
+            // Cancelamento definitivo: apaga os parciais desta sessão.
+            // Pausa/erro comum: mantém o `.part` (resume no retry/resume).
+            if take_cleanup_intent(&download_id) {
+                if let Some(remembered) = forget_download_paths(&download_id) {
+                    for rp in remembered {
+                        remove_temp_variants(Path::new(&rp));
+                    }
+                } else if let Some(ref p) = captured_filepath {
+                    remove_temp_variants(Path::new(p));
+                }
+            }
             let error_event = serde_json::json!({
                 "id": download_id,
                 "type": "error",
@@ -652,6 +765,15 @@ pub async fn ytdlp_download(
         Err(e) => {
             let err_msg = format!("Erro ao aguardar processo: {e}");
             eprintln!("[ytdlp_download] Error waiting for process: {}", err_msg);
+            if take_cleanup_intent(&download_id) {
+                if let Some(remembered) = forget_download_paths(&download_id) {
+                    for rp in remembered {
+                        remove_temp_variants(Path::new(&rp));
+                    }
+                } else if let Some(ref p) = captured_filepath {
+                    remove_temp_variants(Path::new(p));
+                }
+            }
             let error_event = serde_json::json!({
                 "id": download_id,
                 "type": "error",
@@ -665,13 +787,24 @@ pub async fn ytdlp_download(
 
 /// `ytdlp_cancel` — cancela um download ativo via CancelMap.
 /// Aceita { id: String }, { options: { id: String } } ou string direta.
+/// `cleanup=true` = cancelamento definitivo: a task apaga os `.part` ao
+/// terminar. Pausa omite a flag e preserva o `.part` para resume.
 #[tauri::command]
 pub async fn ytdlp_cancel(
     options: Option<serde_json::Value>,
     params: Option<serde_json::Value>,
     payload: Option<serde_json::Value>,
     id: Option<String>,
+    cleanup: Option<bool>,
 ) -> Result<(), String> {
+    // `cleanup` pode vir top-level ({id, cleanup}) ou aninhado ({options:{id, cleanup}}).
+    let nested_cleanup = options
+        .as_ref()
+        .or(params.as_ref())
+        .or(payload.as_ref())
+        .and_then(|v| v.get("cleanup").and_then(|c| c.as_bool()))
+        .unwrap_or(false);
+    let want_cleanup = cleanup.unwrap_or(false) || nested_cleanup;
     let resolved_id = if let Some(s) = id {
         s
     } else if let Some(ref opts) = options.or(params).or(payload) {
@@ -686,6 +819,9 @@ pub async fn ytdlp_cancel(
         return Err("Nenhum ID fornecido para cancelamento".into());
     };
 
+    if want_cleanup {
+        mark_cleanup_intent(&resolved_id);
+    }
     if let Some(child_arc) = unregister_cancel(&resolved_id) {
         let mut child = child_arc.lock().await;
         let _ = child.kill().await;
@@ -694,6 +830,48 @@ pub async fn ytdlp_cancel(
     } else {
         Err("Nenhum download ativo com esse id".into())
     }
+}
+
+/// `ytdlp_cleanup` — apaga artefatos temporários de um download
+/// (`.part`, `.ytdl`, `.temp`, `.cuttmp.*`, fragmentos `-Frag*`).
+/// Aceita `{ id }` (usa os destinos rastreados da sessão), `{ filePath }`
+/// explícito, ou ambos. Só atua dentro da pasta de downloads — nunca apaga
+/// o arquivo final nem nada fora dela. Falha de forma segura (idempotente).
+#[tauri::command]
+pub async fn ytdlp_cleanup(
+    app: AppHandle,
+    id: Option<String>,
+    #[allow(non_snake_case)] filePath: Option<String>,
+) -> Result<serde_json::Value, String> {
+    if id.is_none() && filePath.is_none() {
+        return Err("Nenhum id ou filePath fornecido para limpeza".into());
+    }
+    let downloads = app.path().download_dir().map_err(|e| format!("{e:?}"))?;
+    let mut targets: Vec<PathBuf> = Vec::new();
+    if let Some(fp) = filePath {
+        let p = PathBuf::from(fp.trim().trim_matches(|c| c == '\'' || c == '"'));
+        if p.parent() != Some(downloads.as_path()) {
+            return Err("filePath fora da pasta de downloads".into());
+        }
+        targets.push(p);
+    }
+    if let Some(did) = id {
+        // Consome eventual intenção pendente (processo já morto).
+        let _ = take_cleanup_intent(&did);
+        if let Some(remembered) = forget_download_paths(&did) {
+            for rp in remembered {
+                let p = PathBuf::from(rp);
+                if p.parent() == Some(downloads.as_path()) && !targets.contains(&p) {
+                    targets.push(p);
+                }
+            }
+        }
+    }
+    let mut cleaned = 0u32;
+    for t in &targets {
+        cleaned += remove_temp_variants(t);
+    }
+    Ok(serde_json::json!({ "success": true, "cleaned": cleaned }))
 }
 
 // --- Structs e helpers ---
@@ -827,15 +1005,20 @@ pub fn parse_merge(line: &str) -> Option<String> {
     None
 }
 
-/// Encontra o arquivo mais recente no diretório de downloads.
+/// Encontra o arquivo mais recente no diretório de downloads,
+/// ignorando artefatos temporários (`.part`, `.ytdl`, `.cuttmp.*`, `-Frag*`).
 pub fn latest_downloaded_file(output_dir: &Path) -> Option<String> {
     let entries = match std::fs::read_dir(output_dir) {
         Ok(r) => r.flatten().filter_map(|e| Some(e.path())).collect::<Vec<PathBuf>>(),
         Err(_) => return None,
     };
-    let _ext: [&str; 12] = ["mp4", "webm", "mkv", "mp3", "m4a", "wav", "ogg", "jpg", "jpeg", "png", "gif", "webp"];
     let mut latest: Option<(SystemTime, PathBuf)> = None;
     for e in entries {
+        if let Some(name) = e.file_name().and_then(|s| s.to_str()) {
+            if is_temp_artifact_name(name) {
+                continue;
+            }
+        }
         let m = match e.metadata() { Ok(m)=>m, Err(_)=>continue };
         if let Some(t) = m.modified().ok() {
             if latest.as_ref().map_or(true, |(lt,_)| t > *lt) {
@@ -908,5 +1091,91 @@ mod tests {
         assert_eq!(parse_section_range("*02:00-01:00"), None);
         assert_eq!(parse_section_range(""), None);
         assert_eq!(parse_section_range("*abc-def"), None);
+    }
+
+    #[test]
+    fn temp_artifact_names_detected() {
+        for n in [
+            "video.mp4.part",
+            "video.mp4.part-Frag12",
+            "video.mp4-Frag3.part",
+            "video.mp4.ytdl",
+            "video.mp4.temp",
+            "video.mp4.tmp",
+            "yt-dlp.new",
+            "video.mp4.cuttmp.mp4",
+        ] {
+            assert!(is_temp_artifact_name(n), "{n}");
+        }
+        for n in [
+            "video.mp4",
+            "audio.mp3",
+            "subs.pt.srt",
+            "thumb.webp",
+            "video (1).mp4",
+            "infojson.info.json",
+        ] {
+            assert!(!is_temp_artifact_name(n), "{n}");
+        }
+    }
+
+    fn unique_tmp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "linkfetcher-test-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn remove_temp_variants_keeps_final_and_siblings() {
+        let dir = unique_tmp_dir("variants");
+        let base = dir.join("video.mp4");
+        std::fs::write(&base, b"final").unwrap();
+        std::fs::write(dir.join("video.mp4.part"), b"p").unwrap();
+        std::fs::write(dir.join("video.mp4.ytdl"), b"y").unwrap();
+        std::fs::write(dir.join("video.mp4.cuttmp.mp4"), b"c").unwrap();
+        std::fs::write(dir.join("video.mp4-Frag7.part"), b"f").unwrap();
+        // Homônimo de outro download: intocado.
+        std::fs::write(dir.join("video.mp4 (1)"), b"sibling").unwrap();
+
+        let removed = remove_temp_variants(&base);
+        assert_eq!(removed, 4);
+        assert!(base.is_file());
+        assert!(dir.join("video.mp4 (1)").is_file());
+        assert!(!dir.join("video.mp4.part").exists());
+        assert!(!dir.join("video.mp4.ytdl").exists());
+        assert!(!dir.join("video.mp4.cuttmp.mp4").exists());
+        assert!(!dir.join("video.mp4-Frag7.part").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn remove_temp_variants_handles_part_base() {
+        let dir = unique_tmp_dir("partbase");
+        let part = dir.join("video.mp4.part");
+        std::fs::write(&part, b"p").unwrap();
+        let removed = remove_temp_variants(&part);
+        assert!(removed >= 1);
+        assert!(!part.exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn latest_ignores_part_files() {
+        let dir = unique_tmp_dir("latest");
+        let final_f = dir.join("show.mp4");
+        std::fs::write(&final_f, b"v").unwrap();
+        // .part mais novo que o final: não pode ser eleito.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(dir.join("other.mp4.part"), b"p").unwrap();
+        let got = latest_downloaded_file(&dir).unwrap();
+        assert!(got.ends_with("show.mp4"), "{got}");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

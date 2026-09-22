@@ -6,7 +6,7 @@ import { Shield, Database, Lock, Clock, ArrowLeft } from 'lucide-react';
 export function PrivacyPolicy() {
   const { setActiveTab, settings } = useApp();
   const { t } = useTranslation(settings);
-  const version = (window as any).__APP_VERSION__ ?? '0.0.0';
+  const version = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.2.1';
   const isLight = settings.themeMode === 'light';
 
   const POLICY_CARDS = [

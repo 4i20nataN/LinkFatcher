@@ -4,7 +4,7 @@ import { StorageService } from '../../core/storage/Storage';
 import { 
   Settings, Globe, Sliders, HardDrive, AlertCircle, 
   Trash2, ShieldCheck, Download, Upload, RefreshCw,
-  FolderOpen, FolderPlus, Smile, Palette, Clipboard, Eye, Cookie
+  FolderOpen, FolderPlus, Smile, Palette, Clipboard, Eye
 } from 'lucide-react';
 import { AnimatedCard } from '../../animation/AnimatedCard';
 import { AnimatedList } from '../../animation/AnimatedList';
@@ -391,51 +391,6 @@ export const SettingsView: React.FC = () => {
                   <p className="text-[10px] lf-text-muted">{t('updatesDesc')}</p>
                 </div>
                 <Toggle value={settings.updates} onChange={() => updateSettings({ updates: !settings.updates })} settings={settings} />
-              </div>
-
-              <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="text-xs font-semibold lf-text-secondary flex items-center gap-1.5">
-                      <Cookie size={14} className="text-amber-400" />
-                      {settings.language === 'en' ? 'Browser Cookies' : 'Cookies do Navegador'}
-                      <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase">
-                        {settings.language === 'en' ? 'Recommended' : 'Recomendado'}
-                      </span>
-                    </span>
-                    <p className="text-[10px] lf-text-muted">
-                      {settings.language === 'en'
-                        ? 'Use browser cookies on all downloads to bypass bot detection (403)'
-                        : 'Usar cookies do navegador em todos os downloads para contornar detecção de bot (403)'}
-                    </p>
-                  </div>
-                  <Toggle
-                    value={!!settings.cookiesFromBrowser}
-                    onChange={() => updateSettings({ cookiesFromBrowser: settings.cookiesFromBrowser ? '' : 'chrome' })}
-                    settings={settings}
-                  />
-                </div>
-                {!!settings.cookiesFromBrowser && (
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { id: 'chrome', name: 'Chrome', icon: '🟢' },
-                      { id: 'edge', name: 'Edge', icon: '🔵' },
-                      { id: 'firefox', name: 'Firefox', icon: '🟠' },
-                      { id: 'brave', name: 'Brave', icon: '🦁' },
-                      { id: 'chromium', name: 'Chromium', icon: '🔷' },
-                      { id: 'opera', name: 'Opera', icon: '🔴' },
-                    ].map((b) => (
-                      <button
-                        key={b.id}
-                        onClick={() => updateSettings({ cookiesFromBrowser: b.id })}
-                        className={`py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${settings.cookiesFromBrowser === b.id ? 'lf-surface text-white shadow-md border lf-border' : 'lf-text-muted hover:text-zinc-300 border border-transparent'}`}
-                      >
-                        <span>{b.icon}</span>
-                        {b.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
           </div>

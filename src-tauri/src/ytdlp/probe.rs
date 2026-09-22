@@ -6,9 +6,6 @@ use tauri::AppHandle;
 #[derive(serde::Deserialize)]
 pub struct ProbeOptions {
     pub url: String,
-    pub cookies: Option<String>,
-    #[serde(rename = "cookiesFromBrowser")]
-    pub cookies_from_browser: Option<String>,
     pub proxy: Option<String>,
 }
 
@@ -24,20 +21,7 @@ async fn run_capture(bin: &Path, args: &[String]) -> Result<Vec<u8>, String> {
     Ok(out.stdout)
 }
 
-fn common_auth(
-    args: &mut Vec<String>,
-    cookies: &Option<String>,
-    cfb: &Option<String>,
-    proxy: &Option<String>,
-) {
-    if let Some(c) = cookies {
-        args.push("--cookies".into());
-        args.push(c.clone());
-    }
-    if let Some(c) = cfb {
-        args.push("--cookies-from-browser".into());
-        args.push(c.clone());
-    }
+fn common_auth(args: &mut Vec<String>, proxy: &Option<String>) {
     if let Some(p) = proxy {
         args.push("--proxy".into());
         args.push(p.clone());
@@ -52,12 +36,7 @@ pub async fn ytdlp_probe(
 ) -> Result<serde_json::Value, String> {
     let bin = super::binary::ytdlp_path(&app)?;
     let mut args = vec!["--dump-json".into(), "--no-download".into()];
-    common_auth(
-        &mut args,
-        &options.cookies,
-        &options.cookies_from_browser,
-        &options.proxy,
-    );
+    common_auth(&mut args, &options.proxy);
     args.push(options.url);
     let stdout = run_capture(&bin, &args).await?;
     serde_json::from_slice(&stdout).map_err(|e| format!("probe: JSON inválido: {e}"))
@@ -86,12 +65,7 @@ pub async fn ytdlp_probe_playlist(
         "--no-download".into(),
         "--ignore-errors".into(),
     ];
-    common_auth(
-        &mut args,
-        &options.cookies,
-        &options.cookies_from_browser,
-        &options.proxy,
-    );
+    common_auth(&mut args, &options.proxy);
     args.push(options.url);
     let stdout = run_capture(&bin, &args).await?;
     let text = String::from_utf8_lossy(&stdout);

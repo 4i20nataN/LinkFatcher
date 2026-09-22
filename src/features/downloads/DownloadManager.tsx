@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DownloadItem, AppSettings } from '../../types';
 import { DownloadEngine } from '../../core/engine/DownloadEngine';
-import { CookieRetryPopup } from '../../components/CookieRetryPopup';
 import { buildArgsPreview } from '../../core/ytdlp/buildArgsPreview';
 import { 
   Play, Pause, X, Trash2, FolderOpen, Share2, RotateCcw, 
@@ -40,19 +39,21 @@ const formatSpeed = (bytesPerSec: number) => {
   return `${formatBytes(bytesPerSec)}/s`;
 };
 
-// Helper to format ETA
-const formatEta = (seconds: number) => {  if (seconds === Infinity || isNaN(seconds) || seconds <= 0) return '--';
-  if (seconds >= 3600) {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.ceil((seconds % 3600) / 60);
+// Helper to format ETA. O backend entrega segundos fracionados (ex.
+// 46.5571…s do `%(progress.eta)s`); arredonda antes de exibir.
+const formatEta = (seconds: number) => {  if (!Number.isFinite(seconds) || isNaN(seconds) || seconds <= 0) return '--';
+  const total = Math.round(seconds);
+  if (total >= 3600) {
+    const hrs = Math.floor(total / 3600);
+    const mins = Math.ceil((total % 3600) / 60);
     return `${hrs}h ${mins}m`;
   }
-  if (seconds >= 60) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+  if (total >= 60) {
+    const mins = Math.floor(total / 60);
+    const secs = total % 60;
     return `${mins}m ${secs}s`;
   }
-  return `${seconds}s`;
+  return `${total}s`;
 };
 
 // Pure helper — sem side effects, pode ficar fora do componente.
@@ -65,10 +66,13 @@ const getMediaType = (item: DownloadItem): string => {
   return 'video';
 };
 
-// Recorte (--download-sections): o yt-dlp baixa o stream cheio via ffmpeg com
-// stdout mudo — NÃO há % real do trecho. Estimar (bytes/total cheio) corria a
-// 99% e travava no corte silencioso: progresso falso. Regra honesta: barra
-// indeterminada + bytes vivos; `processing` (backend) = corte local em curso.
+// Recorte (download_sections): o backend baixa o arquivo CHEIO pelo yt-dlp
+// nativo (progresso real, resume) e corta local com ffmpeg (`-c copy`) ao
+// final — delegar `--download-sections` ao yt-dlp faria o fetch via ffmpeg
+// remoto (lento/403 no YouTube, stdout mudo, sem resume). Efeito colateral
+// honesto: o total exibido é o do vídeo completo; o trecho é extraído no
+// fim (fase `processing`). Por isso a linha de tamanho identifica o total
+// como original quando há `downloadSections`.
 
 export const DownloadManager: React.FC = () => {
   const { settings, downloads } = useApp();
@@ -76,7 +80,6 @@ export const DownloadManager: React.FC = () => {
   const [mediaFilter, setMediaFilter] = useState<'all' | 'audio' | 'video' | 'image' | 'playlist'>('all');
   const [statusFilters, setStatusFilters] = useState<Set<string>>(new Set());
   const [toastMsg, setToastMsg] = useState<string | null>(null);
-  const [cookieRetry, setCookieRetry] = useState<{ itemId: string; error: string } | null>(null);
   const [commandPreview, setCommandPreview] = useState<DownloadItem | null>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -84,23 +87,6 @@ export const DownloadManager: React.FC = () => {
     setTimeout(() => {
       setToastMsg(null);
     }, 2000);
-  }, []);
-
-  useEffect(() => {
-    const unsub = DownloadEngine.onCookieRetryRequest((itemId, error) => {
-      setCookieRetry({ itemId, error });
-    });
-    return unsub;
-  }, []);
-
-  const handleUseCookies = useCallback((itemId: string, browser: string) => {
-    DownloadEngine.retryWithCookies(itemId, browser);
-    setCookieRetry(null);
-    showToast(settings.language === 'en' ? 'Retrying with cookies...' : 'Retentando com cookies...');
-  }, [settings.language, showToast]);
-
-  const handleSkipCookieRetry = useCallback(() => {
-    setCookieRetry(null);
   }, []);
 
   // Bulk queue operations
@@ -420,6 +406,9 @@ export const DownloadManager: React.FC = () => {
               // Recorte sem % real (stdout mudo) → indeterminado + bytes vivos.
               // O total exibido seria do arquivo cheio: omitir p/ não induzir.
               const isCutSilent = isDownloading && !!item.downloadSections && !(item.progress > 0);
+              // Intervalo do trecho (`*01:00-02:00` → `01:00-02:00`) p/ rotular
+              // o total como original completo durante o download.
+              const cutRange = (item.downloadSections || '').replace(/^\*/, '');
               // Posição na fila real (só-queued): setas desabilitadas nos extremos.
               const queuePos = queuedIds.indexOf(item.id);
 
@@ -506,7 +495,10 @@ export const DownloadManager: React.FC = () => {
                       )}
                       {/* Trimmed */}
                       {item.downloadSections && item.downloadSections !== '' && (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-amber-900/60 text-amber-300 border border-amber-800/40">
+                        <span
+                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-amber-900/60 text-amber-300 border border-amber-800/40"
+                          title={settings.language === 'en' ? 'Downloads the full video, then extracts this section locally' : 'Baixa o vídeo completo e extrai este trecho localmente'}
+                        >
                           <Scissors size={8} />
                           {t('badgeCut')}
                         </span>
@@ -550,11 +542,18 @@ export const DownloadManager: React.FC = () => {
                       
                       {/* Sub progress metrics */}
                       <div className="flex justify-between items-center gap-3 text-[10px] lf-text-muted font-medium font-mono">
-                        <span className="lf-text-secondary shrink-0">
+                        <span
+                          className="lf-text-secondary shrink-0"
+                          title={isDownloading && cutRange
+                            ? (settings.language === 'en'
+                              ? `Full video total — section ${cutRange} is extracted at the end`
+                              : `Total do vídeo completo — o trecho ${cutRange} é extraído ao final`)
+                            : undefined}
+                        >
                           {isCutSilent
                             ? `${formatBytes(item.sizeDownloaded)} ${settings.language === 'en' ? 'downloaded' : 'baixados'}`
                             : (item.sizeTotal > 0
-                              ? `${formatBytes(item.sizeDownloaded)} / ${formatBytes(item.sizeTotal)} (${item.progress}%)`
+                              ? `${formatBytes(item.sizeDownloaded)} / ${formatBytes(item.sizeTotal)} (${item.progress}%)${isDownloading && cutRange ? ` · ${cutRange}` : ''}`
                               : `${formatBytes(item.sizeDownloaded)} (${item.progress}%)`
                             )
                           }
@@ -689,17 +688,6 @@ export const DownloadManager: React.FC = () => {
           </AnimatedList>
         )}
       </div>
-
-      <AnimatedList>
-        {cookieRetry && (
-          <CookieRetryPopup
-            itemId={cookieRetry.itemId}
-            error={cookieRetry.error}
-            onUseCookies={handleUseCookies}
-            onSkip={handleSkipCookieRetry}
-          />
-        )}
-      </AnimatedList>
 
       <AnimatedList>
         {commandPreview && (

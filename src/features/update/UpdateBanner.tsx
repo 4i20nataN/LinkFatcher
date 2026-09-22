@@ -40,13 +40,16 @@ export default function UpdateBanner() {
 
   const tauriUpdateRef = useRef<Update | null>(null);
 
-  // Verificação inicial ao carregar o aplicativo (com delay suave de 2.5s)
+  // Verificação inicial ao carregar o aplicativo (com delay suave de 2.5s),
+  // só se o toggle de auto-update estiver ativo. Opt-out: `false` explícito
+  // desliga; ausente (perfil antigo) mantém verificando.
   useEffect(() => {
+    if (settings.updates === false) return;
     const timer = setTimeout(() => {
       checkForUpdates();
     }, 2500);
     return () => clearTimeout(timer);
-  }, []);
+  }, [settings.updates]);
 
   const checkForUpdates = useCallback(async () => {
     if (stage === 'downloading' || stage === 'ready') return;

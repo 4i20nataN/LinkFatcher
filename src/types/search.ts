@@ -2,7 +2,6 @@ export interface SearchOptions {
   query: string;
   platform: 'youtube' | 'vimeo' | 'dailymotion' | 'bilibili' | 'soundcloud';
   maxResults?: number;
-  cookies?: string;
   proxy?: string;
 }
 
