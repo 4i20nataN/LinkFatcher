@@ -189,9 +189,9 @@ export const BinarySetupOverlay: React.FC<{ onReady: () => void }> = ({ onReady 
               <span>{t('setupReady')}</span>
             </div>
             <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25">
-              <span className="text-sm">🍪</span>
+              <span className="text-sm">⚡</span>
               <p className="text-[11px] lf-text-secondary leading-relaxed">
-                {t('setupCookieTipA')} <strong>Cookies do Navegador</strong> {t('setupCookieTipB')}
+                {t('setupThrottleTip')}
               </p>
             </div>
             <button

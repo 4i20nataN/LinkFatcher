@@ -7,7 +7,7 @@ import { matchPlatformForUrl } from './platformConfigs';
 // Helper to generate a random number within a range
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
-async function probeWithYtdlp(url: string, options?: { cookies?: string; proxy?: string }): Promise<Record<string, unknown>> {
+async function probeWithYtdlp(url: string, options?: { proxy?: string }): Promise<Record<string, unknown>> {
   return probeUrlWithAdapter({ url, ...options });
 }
 

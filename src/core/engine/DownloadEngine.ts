@@ -33,7 +33,6 @@ const YT_DLP_PLATFORMS = new Set([
 class DownloadEngineClass {
   private items: DownloadItem[] = [];
   private listeners: Set<EngineListener> = new Set();
-  private cookieRetryListeners: Set<(itemId: string, error: string) => void> = new Set();
 
   // Map download id → cancel function
   private cancelFns = new Map<string, () => void>();
@@ -55,7 +54,6 @@ class DownloadEngineClass {
     clipboardEnabled: true,
     clipboardMonitoringEnabled: false,
     clipboardFirstRunDone: false,
-    cookiesFromBrowser: '',
   };
 
   constructor() {
@@ -200,8 +198,6 @@ class DownloadEngineClass {
       customFilename,
       normalizeAudio: formatOptions?.normalizeAudio,
       videoSharpen: formatOptions?.videoSharpen,
-      // Cookie padrão global das Configurações (retry manual por item prevalece depois)
-      cookiesFromBrowser: formatOptions?.cookiesFromBrowser || this.settings.cookiesFromBrowser || undefined,
       imageSource: (format.type === 'image' && /\.(jpe?g|png|gif|webp|bmp|tiff?|svg|heic|avif)(\?|$)/i.test(media.originalUrl))
         ? 'user-link'
         : undefined,
@@ -249,6 +245,15 @@ class DownloadEngineClass {
     this.processQueue();
   }
 
+  // Limpeza post-mortem de parciais (.part/.ytdl/.cuttmp/-Frag*). O backend
+  // só apaga artefatos temporários dentro da pasta de downloads — o arquivo
+  // final nunca é tocado, então é seguro chamar para qualquer status.
+  private fireCleanup(id: string, filePath?: string) {
+    import('@tauri-apps/api/core').then(({ invoke }) =>
+      invoke('ytdlp_cleanup', { id, filePath }).catch(() => {})
+    ).catch(() => {});
+  }
+
   cancelDownload(id: string) {
     const item = this.items.find(i => i.id === id);
     if (!item) return;
@@ -268,12 +273,22 @@ class DownloadEngineClass {
   }
 
   removeDownload(id: string) {
+    const item = this.items.find(i => i.id === id);
     this.items = this.items.filter(i => i.id !== id);
+    // Item fora da lista não tem mais resume: apaga parciais órfãos.
+    // Só temporários (.part etc.) — o final de `completed` é preservado.
+    if (item && item.status !== 'downloading') {
+      this.fireCleanup(item.id, item.filePath);
+    }
     this.notify();
   }
 
   clearCompleted() {
+    const removed = this.items.filter(i => ['completed', 'failed', 'cancelled'].includes(i.status));
     this.items = this.items.filter(i => !['completed', 'failed', 'cancelled'].includes(i.status));
+    for (const item of removed) {
+      this.fireCleanup(item.id, item.filePath);
+    }
     this.notify();
   }
 
@@ -284,7 +299,6 @@ class DownloadEngineClass {
     // Regenera com o preset anterior: todos os campos de opção do item são
     // reaproveitados no argv (nada se perde). Zera os contadores p/ não exibir
     // bytes obsoletos enquanto o yt-dlp retoma o .part.
-    const prevError = item.error || '';
     item.status = 'queued';
     item.progress = 0;
     item.speed = 0;
@@ -293,11 +307,6 @@ class DownloadEngineClass {
     item.processing = false;
     item.error = undefined;
     this.notify();
-    // Erro de bot sem cookies: retry cego falha igual — reabre o popup de
-    // cookies em vez de girar à toa (o usuário escolhe e retenta com cookies).
-    if (!item.cookiesFromBrowser && /403|forbidden|needs to be reloaded|sign in to confirm|not a bot|po token|login required/i.test(prevError)) {
-      this.notifyCookieRetry(item.id, prevError);
-    }
     this.processQueue();
   }
 
@@ -398,7 +407,6 @@ class DownloadEngineClass {
         videoSharpen: item.videoSharpen,
         bandLimit: item.bandLimit,
         noOverwrites: item.noOverwrites,
-        cookiesFromBrowser: item.cookiesFromBrowser,
         outputDir,
       };
 
@@ -411,7 +419,10 @@ class DownloadEngineClass {
 
         if (data.type === 'progress') {
           item.progress = typeof data.percent === 'number' ? data.percent : (parseFloat(data.percent) || 0);
-          item.speed = parseFloat(data.speed) || 0;
+          // Velocidade do yt-dlp é instantânea por intervalo — oscila muito.
+          // EMA (α=0.4) estabiliza o número sem mascarar queda real (0 entra direto).
+          const rawSpeed = parseFloat(data.speed) || 0;
+          item.speed = rawSpeed <= 0 || item.speed <= 0 ? rawSpeed : item.speed + 0.4 * (rawSpeed - item.speed);
           item.eta = parseFloat(data.eta) || 0;
           if (data.downloaded && data.downloaded > 0) {
             item.sizeDownloaded = data.downloaded;
@@ -468,10 +479,6 @@ class DownloadEngineClass {
           this.lastProgressNotify.delete(item.id);
           finish();
           this.notify();
-          // Detecção de bot (403 / reload / login) sem cookies → oferece retry com cookies
-          if (!item.cookiesFromBrowser && /403|forbidden|needs to be reloaded|sign in to confirm|not a bot|po token|login required/i.test(item.error)) {
-            this.notifyCookieRetry(item.id, item.error);
-          }
         }
       });
 
@@ -482,11 +489,16 @@ class DownloadEngineClass {
         try { unlisten(); } catch { /* unlisten idempotente */ }
       };
 
-      // Store unlisten and kill hook for cancel/pause
+      // Store unlisten and kill hook for cancel/pause. O status já foi
+      // ajustado pelo chamador: `cancelled` = definitivo (apaga .part),
+      // `paused` = preserva o .part para resume.
       this.cancelFns.set(item.id, () => {
         finish();
         this.lastProgressNotify.delete(item.id);
-        invoke('ytdlp_cancel', { id: item.id }).catch(() => {});
+        const args = item.status === 'cancelled'
+          ? { id: item.id, cleanup: true }
+          : { id: item.id };
+        invoke('ytdlp_cancel', args).catch(() => {});
       });
 
       // Start download
@@ -520,42 +532,6 @@ class DownloadEngineClass {
     }
   }
 
-  // Cookie retry mechanism
-  addCookieRetryListener(listener: (itemId: string, error: string) => void) {
-    this.cookieRetryListeners.add(listener);
-  }
-
-  removeCookieRetryListener(listener: (itemId: string, error: string) => void) {
-    this.cookieRetryListeners.delete(listener);
-  }
-
-  notifyCookieRetry(itemId: string, error: string) {
-    this.cookieRetryListeners.forEach(l => l(itemId, error));
-  }
-
-  // Compatibility methods for existing consumers
-  onCookieRetryRequest(callback: (itemId: string, error: string) => void): () => void {
-    this.cookieRetryListeners.add(callback);
-    return () => {
-      this.cookieRetryListeners.delete(callback);
-    };
-  }
-
-  async retryWithCookies(itemId: string, browser: string): Promise<void> {
-    const item = this.items.find(i => i.id === itemId);
-    if (!item) return;
-
-    item.cookiesFromBrowser = browser;
-    item.status = 'queued';
-    item.progress = 0;
-    item.speed = 0;
-    item.eta = 0;
-    item.processing = false;
-    item.error = undefined;
-    this.notify();
-    this.processQueue();
-  }
-
   // Reordena por id (não por índice): a UI filtra a lista, então o índice
   // visível não corresponde ao array interno — índice movia o item errado.
   moveQueuedItem(id: string, delta: -1 | 1): void {
@@ -575,7 +551,11 @@ class DownloadEngineClass {
   }
 
   clearHistory(): void {
+    const removed = this.items.filter(i => !['queued', 'downloading', 'paused'].includes(i.status));
     this.items = this.items.filter(i => ['queued', 'downloading', 'paused'].includes(i.status));
+    for (const item of removed) {
+      this.fireCleanup(item.id, item.filePath);
+    }
     this.notify();
   }
 

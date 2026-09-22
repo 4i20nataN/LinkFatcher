@@ -13,5 +13,4 @@ export interface AppSettings {
   clipboardEnabled: boolean;
   clipboardMonitoringEnabled: boolean;
   clipboardFirstRunDone: boolean;
-  cookiesFromBrowser?: string; // slug do navegador ('chrome', 'firefox'...) ou '' = desativado
 }

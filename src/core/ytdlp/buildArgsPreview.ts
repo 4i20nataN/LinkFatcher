@@ -80,7 +80,6 @@ export function buildArgsPreview(item: {
   sponsorblockRemove?: string;
   fpsMax?: number;
   bandLimit?: number;
-  cookiesFromBrowser?: string;
   normalizeAudio?: boolean;
   videoSharpen?: 'none' | 'light' | 'normal' | 'strong';
   videoCodec?: string;
@@ -146,7 +145,6 @@ export function buildArgsPreview(item: {
   }
 
   if (item.retries && item.retries > 0) args.push('--extractor-retries', String(item.retries));
-  if (item.cookiesFromBrowser) args.push('--cookies-from-browser', item.cookiesFromBrowser);
 
   if (item.videoCodec) args.push('--format-sort', `vcodec:${item.videoCodec}`);
 

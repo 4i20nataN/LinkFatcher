@@ -33,5 +33,4 @@ export interface FormatOptions {
   descFormat?: 'txt' | 'md' | 'none';
   normalizeAudio?: boolean;
   videoSharpen?: 'none' | 'light' | 'normal' | 'strong';
-  cookiesFromBrowser?: string;
 }

@@ -107,7 +107,6 @@ export class StorageService {
       clipboardEnabled: true,
       clipboardMonitoringEnabled: false,
       clipboardFirstRunDone: false,
-      cookiesFromBrowser: '',
     };
   }
 
