@@ -122,7 +122,7 @@ export const translations = {
     notifLabel: 'Notificações do Sistema',
     notifDesc: 'Exibir balões de aviso ao concluir downloads.',
     updatesLabel: 'Buscar atualizações automaticamente',
-    updatesDesc: 'Busca patches do motor de análise na inicialização.',
+    updatesDesc: 'Verifica novas versões do app no GitHub ao iniciar.',
     
     // Format Selector
     selectFormat: 'Selecionar Formato',
@@ -209,7 +209,7 @@ export const translations = {
     // Privacy policy
     privBack: 'Voltar para Configurações',
     privTitle: 'Política de Privacidade',
-    privUpdated: 'Última atualização: 19 de setembro de 2026',
+    privUpdated: 'Última atualização: 22 de setembro de 2026',
     privSection: 'Compromisso com sua privacidade',
     privIntroA: 'Na ',
     privIntroB: ', privacidade é arquitetura:',
@@ -472,7 +472,7 @@ export const translations = {
     notifLabel: 'System Notifications',
     notifDesc: 'Display notification banners when downloads finish.',
     updatesLabel: 'Check for updates automatically',
-    updatesDesc: 'Checks for analysis engine patches on startup.',
+    updatesDesc: 'Checks GitHub for new app releases on startup.',
 
     // Format Selector
     selectFormat: 'Select Format',
@@ -559,7 +559,7 @@ export const translations = {
     // Privacy policy
     privBack: 'Back to Settings',
     privTitle: 'Privacy Policy',
-    privUpdated: 'Last updated: September 19, 2026',
+    privUpdated: 'Last updated: September 22, 2026',
     privSection: 'Our commitment to your privacy',
     privIntroA: 'At ',
     privIntroB: ', privacy is architecture:',

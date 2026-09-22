@@ -102,7 +102,7 @@ export class StorageService {
       maxConcurrent: 3,
       autoDownload: true,
       notifications: true,
-      updates: false,
+      updates: true,
       colorfulIcons: false,
       clipboardEnabled: true,
       clipboardMonitoringEnabled: false,
