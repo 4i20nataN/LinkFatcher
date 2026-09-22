@@ -19,6 +19,7 @@ fn main() {
       ytdlp::binary::ytdlp_ensure_binaries,
       fs::ytdlp_download,
       fs::ytdlp_cancel,
+      fs::ytdlp_cleanup,
       fs::fs_get_downloads_path,
       fs::fs_open_path,
       fs::fs_select_folder,

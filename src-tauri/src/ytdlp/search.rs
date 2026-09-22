@@ -8,7 +8,6 @@ pub struct SearchOptions {
     pub platform: String,
     #[serde(rename = "maxResults")]
     pub max_results: Option<u32>,
-    pub cookies: Option<String>,
     pub proxy: Option<String>,
 }
 
@@ -81,10 +80,6 @@ pub async fn ytdlp_search(
         "--dump-json".into(),
         "--no-download".into(),
     ];
-    if let Some(c) = &options.cookies {
-        args.push("--cookies".into());
-        args.push(c.clone());
-    }
     if let Some(p) = &options.proxy {
         args.push("--proxy".into());
         args.push(p.clone());

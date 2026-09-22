@@ -65,8 +65,6 @@ pub struct DownloadParams {
     #[serde(default)]
     pub custom_filename: Option<String>,
     #[serde(default)]
-    pub cookies_from_browser: Option<String>,
-    #[serde(default)]
     pub normalize_audio: Option<bool>,
     #[serde(default)]
     pub video_sharpen: Option<String>,
@@ -389,7 +387,8 @@ fn inject_fps_filter(format: &str, fps: f64) -> String {
     out
 }
 
-/// Monta o argv — ordem idêntica a `YtDlpSpawn.ts:78-177`.
+/// Monta o argv — ordem idêntica a `YtDlpSpawn.ts:78-177`, mais
+/// `--no-cache-dir` (honestidade: zero resíduo fora da pasta de downloads).
 pub fn build_args(
     params: &DownloadParams,
     output_dir: &Path,
@@ -399,6 +398,7 @@ pub fn build_args(
         "--no-playlist".to_owned(),
         "--no-warnings".to_owned(),
         "--no-mtime".to_owned(),
+        "--no-cache-dir".to_owned(),
         "--windows-filenames".to_owned(),
         "--progress".to_owned(),
         "--newline".to_owned(),
@@ -507,10 +507,6 @@ pub fn build_args(
             args.push(fmt_num(r));
         }
     }
-    if let Some(c) = non_empty(&params.cookies_from_browser) {
-        args.push("--cookies-from-browser".to_owned());
-        args.push(c.to_owned());
-    }
     if let Some(v) = non_empty(&params.video_codec) {
         args.push("--format-sort".to_owned());
         args.push(format!("vcodec:{v}"));
@@ -583,7 +579,7 @@ mod tests {
     }
 
     fn head(args: &[String]) -> Vec<String> {
-        args[..8].to_vec()
+        args[..9].to_vec()
     }
 
     #[test]
@@ -599,6 +595,7 @@ mod tests {
                 "--no-playlist",
                 "--no-warnings",
                 "--no-mtime",
+                "--no-cache-dir",
                 "--windows-filenames",
                 "--progress",
                 "--newline",
@@ -607,7 +604,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            &a[8..],
+            &a[9..],
             &[
                 "--format",
                 "bestvideo+bestaudio/best",
@@ -665,7 +662,6 @@ mod tests {
             band_limit: Some(500.0),
             concurrent_fragments: Some(4.0),
             retries: Some(3.0),
-            cookies_from_browser: Some("chrome".into()),
             video_codec: Some("avc1".into()),
             ..Default::default()
         };
@@ -681,7 +677,6 @@ mod tests {
             "--limit-rate\u{1f}500K",
             "--concurrent-fragments\u{1f}4",
             "--extractor-retries\u{1f}3",
-            "--cookies-from-browser\u{1f}chrome",
             "--format-sort\u{1f}vcodec:avc1",
         ] {
             assert!(joined.contains(expected), "faltando: {expected}");
