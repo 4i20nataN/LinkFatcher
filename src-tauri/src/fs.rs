@@ -221,6 +221,87 @@ pub async fn fs_stat(file_path: String) -> Result<serde_json::Value, String> {
     }
 }
 
+/// Extensão pela content-type (`image/jpeg; charset=x` → `jpg`).
+fn content_type_ext(ct: &str) -> Option<&'static str> {
+    let mime = ct.split(';').next()?.trim().to_lowercase();
+    match mime.as_str() {
+        "image/jpeg" => Some("jpg"),
+        "image/png" => Some("png"),
+        "image/webp" => Some("webp"),
+        "image/gif" => Some("gif"),
+        "image/avif" => Some("avif"),
+        "image/bmp" => Some("bmp"),
+        _ => None,
+    }
+}
+
+/// Extensão pelo path da URL (`.../hqdefault.jpg?x` → `jpg`).
+fn url_path_ext(url: &str) -> Option<String> {
+    let path = url.split(['?', '#']).next()?;
+    let ext = path.rsplit('.').next()?;
+    if ext.len() >= 2
+        && ext.len() <= 5
+        && ext.chars().all(|c| c.is_ascii_alphanumeric())
+        && !path.ends_with('/')
+    {
+        Some(if ext.eq_ignore_ascii_case("jpeg") {
+            "jpg".to_owned()
+        } else {
+            ext.to_lowercase()
+        })
+    } else {
+        None
+    }
+}
+
+/// `fs_fetch_cover` — baixa os bytes da imagem de capa via HTTP direto
+/// (sem CORS de canvas) e devolve em base64 + extensão real. O frontend
+/// converte (blob: URL = canvas limpo) e salva via plugin-fs. Teto 25 MB.
+#[tauri::command]
+pub async fn fs_fetch_cover(url: String) -> Result<serde_json::Value, String> {
+    use base64::Engine as _;
+    let url = url.trim().to_owned();
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("URL de capa inválida".into());
+    }
+    let client = reqwest::Client::builder()
+        .user_agent("LinkFetcher")
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("baixar capa: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("capa: HTTP {}", resp.status()));
+    }
+    let ext = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(content_type_ext)
+        .map(str::to_owned)
+        .or_else(|| url_path_ext(&url))
+        .unwrap_or_else(|| "jpg".to_owned());
+    // Teto anti-abuso: capa de 25 MB já é absurda.
+    const MAX_COVER: u64 = 25 * 1024 * 1024;
+    if resp.content_length().is_some_and(|n| n > MAX_COVER) {
+        return Err("capa grande demais".into());
+    }
+    let bytes = resp.bytes().await.map_err(|e| format!("ler capa: {e}"))?;
+    if bytes.len() as u64 > MAX_COVER {
+        return Err("capa grande demais".into());
+    }
+    Ok(serde_json::json!({
+        "success": true,
+        "data": base64::engine::general_purpose::STANDARD.encode(&bytes),
+        "ext": ext,
+        "size": bytes.len(),
+    }))
+}
+
 /// Limpa o stderr para exibição: descarta segmentos de progresso do ffmpeg
 /// (`frame=… fps=…`, `size=… time=…`) que soterrariam o erro real; mantém as
 /// últimas linhas significativas, máx. 500 chars.
@@ -392,6 +473,41 @@ fn is_temp_artifact_name(name: &str) -> bool {
         || name.contains("-Frag")
 }
 
+/// Remove as flags de legenda do argv (`--write-subs`, `--write-auto-subs`,
+/// `--sub-langs X`, `--sub-format X`, `--embed-subs`). Usado no retry
+/// video-only após falha de legenda (GAP1).
+fn strip_sub_flags(argv: Vec<String>) -> Vec<String> {
+    let mut out = Vec::with_capacity(argv.len());
+    let mut skip_next = false;
+    for a in argv {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if a == "--sub-langs" || a == "--sub-format" {
+            skip_next = true;
+            continue;
+        }
+        if a == "--write-subs" || a == "--write-auto-subs" || a == "--embed-subs" {
+            continue;
+        }
+        out.push(a);
+    }
+    out
+}
+
+/// Elegível ao retry sem legendas: pediu legendas, ainda não tentou, o
+/// stderr cita legenda (não é falha do vídeo) e o processo saiu sozinho
+/// (kill por pausa/cancel tem `code() == None` no unix).
+fn should_retry_without_subs(
+    params: &crate::ytdlp::args::DownloadParams,
+    err_lower: &str,
+    code: Option<i32>,
+) -> bool {
+    let asked = params.write_subs.unwrap_or(false) || params.write_auto_subs.unwrap_or(false);
+    params.subs_fallback.is_none() && asked && err_lower.contains("subtitle") && code.is_some()
+}
+
 /// Apaga as variantes temporárias de um caminho-base (`base.part`,
 /// `base.ytdl`, `base.cutmp.*`, fragmentos `-Frag*` etc). Nunca apaga o
 /// arquivo final — exceto se o próprio base já for um artefato (ex.
@@ -512,6 +628,24 @@ pub async fn ytdlp_download(
         }
         argv = stripped;
     }
+    // Retry video-only (GAP1): 2ª execução após falha de legenda carrega
+    // `subs_fallback` — remove as flags para salvar pelo menos o vídeo.
+    if params.subs_fallback.is_some() {
+        eprintln!("[ytdlp_download] retry sem legendas");
+        argv = strip_sub_flags(argv);
+    }
+    // Runtime JS do sistema (se houver): sem ele a extração moderna do
+    // YouTube degrada (formatos ausentes). Vai antes da URL posicional.
+    {
+        let js = crate::ytdlp::binary::js_runtime_args();
+        if !js.is_empty() {
+            let url_arg = argv.pop();
+            argv.extend(js);
+            if let Some(u) = url_arg {
+                argv.push(u);
+            }
+        }
+    }
     eprintln!("[ytdlp_download] argv: {:?}", argv);
 
     // Spawn com pipes
@@ -591,6 +725,7 @@ pub async fn ytdlp_download(
     // Process stdout lines, emit progress events and track destination file
     let download_id = params.id.clone();
     let mut captured_filepath: Option<String> = None;
+    let mut subtitle_written = false;
 
     while let Some(line) = stdout_rx.recv().await {
         let trimmed = line.trim();
@@ -625,6 +760,8 @@ pub async fn ytdlp_download(
             eprintln!("[ytdlp_download] captured merged file: {}", merged);
             remember_download_path(&download_id, &merged);
             captured_filepath = Some(merged);
+        } else if parse_subtitle_path(trimmed).is_some() {
+            subtitle_written = true;
         } else if trimmed.contains("has already been downloaded") {
             if let Some(start) = trimmed.find("[download] ") {
                 if let Some(end) = trimmed.find(" has already been downloaded") {
@@ -704,11 +841,33 @@ pub async fn ytdlp_download(
                 std::fs::metadata(p).ok().map(|m| m.len()).unwrap_or(0)
             }).unwrap_or(0);
 
+            // Aviso de legendas (não é erro: o vídeo está íntegro):
+            // - retry video-only (GAP1): a 1ª tentativa falhou nas legendas;
+            // - recorte + sidecar (GAP2): o .srt cobre o vídeo inteiro, pois
+            //   o corte local só atinge o vídeo (embutida não tem esse problema).
+            let sub_warning: Option<String> =
+                if let Some(reason) = params.subs_fallback.as_deref() {
+                    Some(format!("Legendas indisponíveis ({reason}); vídeo salvo sem elas"))
+                } else if wants_cut
+                    && subtitle_written
+                    && !params.embed_subs.unwrap_or(false)
+                    && (params.write_subs.unwrap_or(false)
+                        || params.write_auto_subs.unwrap_or(false))
+                {
+                    Some(
+                        "Legendas laterais cobrem o vídeo completo (o recorte aplica-se só ao vídeo)"
+                            .to_owned(),
+                    )
+                } else {
+                    None
+                };
+
             let complete_event = serde_json::json!({
                 "id": download_id,
                 "type": "complete",
                 "filePath": final_path,
                 "size": size,
+                "subWarning": sub_warning,
             });
             let _ = app.emit("yt-dlp-progress", &complete_event);
             let _ = app.emit(
@@ -733,6 +892,17 @@ pub async fn ytdlp_download(
                 format!("yt-dlp encerrou com status {:?}", status.code())
             };
             eprintln!("[ytdlp_download] Process failed: {}", err_msg);
+
+            // GAP1: falha citando legenda com legendas pedidas = acessório
+            // (ex. 429 transitório), não o vídeo. Uma única re-execução sem
+            // as flags salva o vídeo e avisa no `complete`. Kill de pausa/
+            // cancel sai sozinho (code None no unix) e nunca entra aqui.
+            if should_retry_without_subs(&params, &err_msg.to_lowercase(), status.code()) {
+                eprintln!("[ytdlp_download] subs falharam; repetindo sem legendas");
+                let mut retry_params = params;
+                retry_params.subs_fallback = Some(err_msg);
+                return Box::pin(ytdlp_download(app.clone(), None, Some(retry_params), None)).await;
+            }
 
             // Cancelamento definitivo: apaga os parciais desta sessão.
             // Pausa/erro comum: mantém o `.part` (resume no retry/resume).
@@ -985,6 +1155,15 @@ pub fn parse_progress(line: &str) -> Option<ParsedProgress> {
     })
 }
 
+/// Linha `[info] Writing video subtitles to: /path` (GAP2: com recorte, o
+/// sidecar cobre o vídeo inteiro — avisar, pois o corte só atinge o vídeo).
+pub fn parse_subtitle_path(line: &str) -> Option<String> {
+    if let Some(idx) = line.find("Writing video subtitles to: ") {
+        return Some(line[idx + "Writing video subtitles to: ".len()..].trim().to_owned());
+    }
+    None
+}
+
 /// Linha `Destination: /path`.
 pub fn parse_destination(line: &str) -> Option<String> {
     if let Some(idx) = line.find("Destination: ") {
@@ -1177,5 +1356,112 @@ mod tests {
         let got = latest_downloaded_file(&dir).unwrap();
         assert!(got.ends_with("show.mp4"), "{got}");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn cover_ext_from_content_type() {
+        assert_eq!(content_type_ext("image/jpeg"), Some("jpg"));
+        assert_eq!(content_type_ext("image/jpeg; charset=binary"), Some("jpg"));
+        assert_eq!(content_type_ext("IMAGE/PNG"), Some("png"));
+        assert_eq!(content_type_ext("image/webp"), Some("webp"));
+        assert_eq!(content_type_ext("image/gif"), Some("gif"));
+        assert_eq!(content_type_ext("text/html"), None);
+        assert_eq!(content_type_ext(""), None);
+    }
+
+    #[test]
+    fn cover_ext_from_url_path() {
+        assert_eq!(
+            url_path_ext("https://i.ytimg.com/vi/x/hqdefault.jpg"),
+            Some("jpg".to_owned())
+        );
+        assert_eq!(
+            url_path_ext("https://cdn/a.PNG?w=100#frag"),
+            Some("png".to_owned())
+        );
+        assert_eq!(
+            url_path_ext("https://cdn/a.JPEG"),
+            Some("jpg".to_owned())
+        );
+        assert_eq!(url_path_ext("https://cdn/noext"), None);
+        assert_eq!(url_path_ext("https://cdn/a.toolongext"), None);
+    }
+
+    #[test]
+    fn subtitle_path_parsing() {
+        assert_eq!(
+            parse_subtitle_path("[info] Writing video subtitles to: /dl/v.en.srt"),
+            Some("/dl/v.en.srt".to_owned())
+        );
+        assert_eq!(parse_subtitle_path("[download] Destination: /dl/v.mp4"), None);
+        assert_eq!(parse_subtitle_path(""), None);
+    }
+
+    #[test]
+    fn sub_flags_stripped_keeping_rest() {
+        let argv = vec![
+            "--format".to_owned(),
+            "best".to_owned(),
+            "--write-subs".to_owned(),
+            "--write-auto-subs".to_owned(),
+            "--sub-langs".to_owned(),
+            "en".to_owned(),
+            "--sub-format".to_owned(),
+            "srt".to_owned(),
+            "--embed-subs".to_owned(),
+            "--concurrent-fragments".to_owned(),
+            "8".to_owned(),
+            "https://x/y".to_owned(),
+        ];
+        assert_eq!(
+            strip_sub_flags(argv),
+            vec![
+                "--format",
+                "best",
+                "--concurrent-fragments",
+                "8",
+                "https://x/y",
+            ]
+        );
+    }
+
+    #[test]
+    fn subs_retry_eligibility() {
+        use crate::ytdlp::args::DownloadParams;
+        let with_subs = DownloadParams {
+            write_subs: Some(true),
+            ..Default::default()
+        };
+        // Falha citando legenda + saída natural + 1ª vez → elegível.
+        assert!(should_retry_without_subs(
+            &with_subs,
+            "unable to download video subtitles for 'en': http error 429",
+            Some(1),
+        ));
+        // Sem citar legenda (falha do vídeo) → não.
+        assert!(!should_retry_without_subs(&with_subs, "http error 429", Some(1)));
+        // Kill (sem código) → não.
+        assert!(!should_retry_without_subs(
+            &with_subs,
+            "unable to download video subtitles for 'en'",
+            None,
+        ));
+        // Sem legendas pedidas → não.
+        assert!(!should_retry_without_subs(
+            &DownloadParams::default(),
+            "unable to download video subtitles for 'en'",
+            Some(1),
+        ));
+        // Segunda vez (já com fallback) → não (evita loop).
+        let second = DownloadParams {
+            write_subs: Some(true),
+            subs_fallback: Some("x".into()),
+            ..Default::default()
+        };
+        assert!(!should_retry_without_subs(
+            &second,
+            "unable to download video subtitles for 'en'",
+            Some(1),
+        ));
     }
 }

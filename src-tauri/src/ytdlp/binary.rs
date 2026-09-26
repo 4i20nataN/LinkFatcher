@@ -120,6 +120,61 @@ pub fn ffprobe_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(bin_dir(app)?.join(FFPROBE_BIN))
 }
 
+/// Localiza um executável no PATH (sem depender do `which`).
+#[cfg(unix)]
+fn find_in_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let p = dir.join(name);
+        if p.is_file() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(m) = std::fs::metadata(&p) {
+                    if m.permissions().mode() & 0o111 != 0 {
+                        return Some(p);
+                    }
+                    continue;
+                }
+            }
+            return Some(p);
+        }
+    }
+    None
+}
+
+#[cfg(not(unix))]
+fn find_in_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        for cand in [format!("{name}.exe"), name.to_owned()] {
+            let p = dir.join(&cand);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+/// Runtime JS para o yt-dlp (extração moderna do YouTube exige; sem ele:
+/// "some formats may be missing"). Ordem de prioridade do próprio yt-dlp.
+/// Retorna `["--js-runtimes", "nome:/caminho"]` ou vazio (argv intacto).
+/// Só detecta o que já existe no sistema — nada é baixado.
+pub fn js_runtime_args() -> Vec<String> {
+    for name in ["deno", "node", "quickjs", "bun"] {
+        if let Some(p) = find_in_path(name) {
+            eprintln!("[js_runtime] usando {name} em {}", p.display());
+            return vec![
+                "--js-runtimes".to_owned(),
+                format!("{name}:{}", p.to_string_lossy()),
+            ];
+        }
+    }
+    eprintln!("[js_runtime] nenhum runtime JS no PATH; extração degradada");
+    Vec::new()
+}
+
 /// `ytdlp_status` — `{ready, missing, binaryPath}` (superconjunto do contrato do
 /// overlay `{ready}`, do reference `{ready, missing}` e do spec `{ready, binaryPath}`).
 #[tauri::command]
@@ -690,8 +745,7 @@ mod tests {
 
     #[test]
     fn parse_sums_btbn_format() {
-        let text = "469a44b4d951eae7e6f6b61858e948104d541a631322ef26efc5e17b3a521062  ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz\n\
-            3fb73caf23f562bffb1db4c1218c7f3a8c9e6346b55d95a7d5d223b8afab802d *ffmpeg-n8.1-latest-win64-gpl-8.1.zip\n";
+        let text = "469a44b4d951eae7e6f6b61858e948104d541a631322ef26efc5e17b3a521062  ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz\n3fb73caf23f562bffb1db4c1218c7f3a8c9e6346b55d95a7d5d223b8afab802d *ffmpeg-n8.1-latest-win64-gpl-8.1.zip\n";
         assert_eq!(
             parse_sums(text, "ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz"),
             Some("469a44b4d951eae7e6f6b61858e948104d541a631322ef26efc5e17b3a521062".to_owned())
@@ -701,5 +755,19 @@ mod tests {
             Some("3fb73caf23f562bffb1db4c1218c7f3a8c9e6346b55d95a7d5d223b8afab802d".to_owned())
         );
         assert_eq!(parse_sums(text, "inexistente.tar.xz"), None);
+    }
+
+    #[test]
+    fn js_runtime_args_shape() {
+        // Depende do PATH da máquina: ou vazio, ou ["--js-runtimes", "nome:/caminho"].
+        let args = js_runtime_args();
+        if args.is_empty() {
+            return;
+        }
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0], "--js-runtimes");
+        let (name, path) = args[1].split_once(':').expect("nome:/caminho");
+        assert!(["deno", "node", "quickjs", "bun"].contains(&name));
+        assert!(std::path::Path::new(path).is_file());
     }
 }

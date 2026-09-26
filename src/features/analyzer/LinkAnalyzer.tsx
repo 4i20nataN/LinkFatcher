@@ -496,14 +496,103 @@ export const LinkAnalyzer: React.FC = () => {
       return;
     }
     setShowCoverFormats(false);
+    const titleBase = ((mediaInfo.title || 'video').replace(/[<>:"/\\|?*]/g, '_').substring(0, 80));
+    // Converte bytes (já em mãos) para o formato do botão via blob: limpo:
+    // blob: é same-origin, então o canvas nunca é contaminado — sem CORS.
+    const convertCoverBytes = (raw: Uint8Array, srcMime: string, target: 'jpg' | 'png' | 'webp'): Promise<Uint8Array> =>
+      new Promise((resolve, reject) => {
+        const objUrl = URL.createObjectURL(new Blob([raw as BlobPart], { type: srcMime }));
+        const done = () => URL.revokeObjectURL(objUrl);
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx || !canvas.width || !canvas.height) throw new Error('convert');
+            ctx.drawImage(img, 0, 0);
+            const mime = target === 'jpg' ? 'image/jpeg' : target === 'png' ? 'image/png' : 'image/webp';
+            const quality = target === 'png' ? undefined : 0.92;
+            canvas.toBlob((b) => {
+              done();
+              if (!b) { reject(new Error('convert')); return; }
+              b.arrayBuffer().then(
+                (ab) => resolve(new Uint8Array(ab)),
+                () => reject(new Error('convert')),
+              );
+            }, mime, quality);
+          } catch {
+            done();
+            reject(new Error('convert'));
+          }
+        };
+        img.onerror = () => { done(); reject(new Error('convert')); };
+        img.src = objUrl;
+      });
+    const mimeOf = (ext: string) =>
+      ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
     try {
+      setSuccessMsg(settings.language === 'en' ? 'Downloading thumbnail...' : 'Baixando capa...');
+      const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+      if (isTauri) {
+        const { invoke } = await import('@tauri-apps/api/core');
+        // 1. Bytes via backend (sem CORS): vi_webp não envia ACAO, então
+        // carregar por <img> com crossOrigin jamais funcionaria aqui.
+        const fetched = await invoke<{ success: boolean; data: string; ext: string; size: number }>(
+          'fs_fetch_cover',
+          { url: mediaInfo.thumbnailUrl },
+        );
+        const raw = Uint8Array.from(atob(fetched.data), (c) => c.charCodeAt(0));
+        const realExt = (fetched.ext || 'jpg').toLowerCase();
+        // 2. Respeita o botão: converte para o formato escolhido; se a
+        // conversão falhar, entrega os bytes originais com a extensão real.
+        let outBytes = raw;
+        let outExt = realExt;
+        if (targetExt !== realExt) {
+          try {
+            outBytes = await convertCoverBytes(raw, mimeOf(realExt), targetExt);
+            outExt = targetExt;
+          } catch {
+            outBytes = raw;
+            outExt = realExt;
+          }
+        }
+        // 3. Salva e registra nas Downloads como item concluído.
+        const { writeFile } = await import('@tauri-apps/plugin-fs');
+        const { join } = await import('@tauri-apps/api/path');
+        let dir = settings.defaultDir || '';
+        if (!dir) {
+          try {
+            dir = await invoke<string>('fs_get_downloads_path');
+          } catch { dir = ''; }
+        }
+        if (!dir) throw new Error('nodir');
+        const filename = `${titleBase}_capa.${outExt}`;
+        const filePath = await join(dir, filename);
+        try {
+          await writeFile(filePath, outBytes);
+        } catch {
+          throw new Error('write');
+        }
+        DownloadEngine.registerCompletedFile({
+          title: mediaInfo.title || titleBase,
+          filePath,
+          size: outBytes.length,
+          platform: mediaInfo.platform,
+          url: mediaInfo.thumbnailUrl,
+          thumbnailUrl: mediaInfo.thumbnailUrl,
+          ext: outExt,
+        });
+        const shown = outExt.toUpperCase();
+        setSuccessMsg(settings.language === 'en' ? `Cover saved (${shown})!` : `Capa salva (${shown})!`);
+        setTimeout(() => setSuccessMsg(null), 2000);
+        return;
+      }
+      // Web (sem Tauri): caminho antigo por canvas direto da URL.
       const mime = targetExt === 'jpg' ? 'image/jpeg' : targetExt === 'png' ? 'image/png' : 'image/webp';
       const quality = targetExt === 'png' ? undefined : 0.92;
-      setSuccessMsg(settings.language === 'en' ? 'Downloading thumbnail...' : 'Baixando capa...');
-      const title = (mediaInfo.title || 'video').replace(/[<>:"/\\|?*]/g, '_').substring(0, 80);
-      const filename = `${title}_capa.${targetExt}`;
-
-      // Converte via Canvas para o formato escolhido (1 arquivo, sem duplicatas)
+      const filename = `${titleBase}_capa.${targetExt}`;
       const img = new Image();
       img.crossOrigin = 'anonymous';
       await new Promise<void>((resolve, reject) => {
@@ -515,38 +604,24 @@ export const LinkAnalyzer: React.FC = () => {
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
       canvas.getContext('2d')?.drawImage(img, 0, 0);
-      const blob: Blob | null = await new Promise(res => canvas.toBlob(res, mime, quality));
+      const blob: Blob | null = await new Promise((res) => canvas.toBlob(res, mime, quality));
       if (!blob) throw new Error('convert');
-
-      const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
-      if (isTauri) {
-        const { writeFile } = await import('@tauri-apps/plugin-fs');
-        const { join } = await import('@tauri-apps/api/path');
-        let dir = settings.defaultDir || '';
-        if (!dir) {
-          try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            dir = await invoke<string>('fs_get_downloads_path');
-          } catch { dir = ''; }
-        }
-        if (!dir) throw new Error('nodir');
-        await writeFile(await join(dir, filename), new Uint8Array(await blob.arrayBuffer()));
-      } else {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
       setSuccessMsg(settings.language === 'en' ? `Cover saved (${targetExt.toUpperCase()})!` : `Capa salva (${targetExt.toUpperCase()})!`);
       setTimeout(() => setSuccessMsg(null), 2000);
     } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      const detail = raw ? ` (${raw.replace(/^Error: /, '').substring(0, 80)})` : '';
       console.warn('Error downloading thumbnail:', err);
-      setSuccessMsg(settings.language === 'en' ? 'Failed to download thumbnail' : 'Falha ao baixar capa');
-      setTimeout(() => setSuccessMsg(null), 3000);
+      setSuccessMsg(settings.language === 'en' ? `Failed to download thumbnail${detail}` : `Falha ao baixar capa${detail}`);
+      setTimeout(() => setSuccessMsg(null), 4000);
     }
   };
 
@@ -933,8 +1008,9 @@ export const LinkAnalyzer: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Actions Toolbelt */}
-                <div className="flex flex-wrap gap-2">
+                {/* Actions Toolbelt (items-start: a coluna da capa cresce
+                    com a linha de formatos sem esticar os vizinhos) */}
+                <div className="flex flex-wrap items-start gap-2">
                   <button
                     onClick={handleToggleFav}
                     className={`

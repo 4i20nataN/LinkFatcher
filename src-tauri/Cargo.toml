@@ -18,6 +18,8 @@ tar = "0.4"
 # extrair direto sem o .tar temporário de ~500 MB.
 xz2 = "0.1"
 sha2 = "0.10"
+# base64: transporte de bytes da capa via IPC (JSON não tem binário).
+base64 = "0.22"
 hex = "0.4"
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"

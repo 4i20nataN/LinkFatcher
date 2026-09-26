@@ -49,6 +49,8 @@ export interface DownloadItem {
   finishedAt?: string;
   url: string;
   error?: string;
+  /** Aviso não-fatal (ex. vídeo salvo sem legendas, sidecar fora do corte). */
+  subWarning?: string;
   filePath?: string;
   finalArgs?: string[];
 }

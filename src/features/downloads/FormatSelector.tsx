@@ -11,7 +11,7 @@ import { AnimatedAccordion } from '../../animation/AnimatedAccordion';
 import { AnimatedButton } from '../../animation/AnimatedButton';
 import { TabIndicator, LayoutGroup } from '../../animation/TabIndicator';
 import { chevronRotate, slideUp, scaleIn, fadeIn, transitions } from '../../animation/variants';
-import { ChevronDown, ChevronUp, Info, ArrowDownToLine, AlertTriangle, FileText, Download } from 'lucide-react';
+import { ChevronDown, ChevronUp, Info, ArrowDownToLine, AlertTriangle, FileText, Download, X, Subtitles } from 'lucide-react';
 import { AUDIO_QUALITY_PRESETS } from './constants';
 
 interface FormatSelectorProps {
@@ -135,6 +135,107 @@ function parseTimeInput(text: string): number | null {
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
   if (parts.length === 2 && parts[0] >= 0 && parts[1] >= 0 && parts[1] < 60) return parts[0] * 60 + parts[1];
   return null;
+}
+
+// Modal flutuante de idiomas do probe: busca + clique escolhe (define
+// `subLangs`; clicar no já escolhido limpa). Escopo de arquivo para não
+// remontar a cada render do seletor (preserva o texto da busca).
+function SubsPickerModal({ manual, auto, selected, onPick, onClose }: {
+  manual: string[];
+  auto: string[];
+  selected: string;
+  onPick: (lang: string) => void;
+  onClose: () => void;
+}) {
+  const { settings } = useApp();
+  const { t } = useTranslation(settings);
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onClose]);
+  const norm = q.trim().toLowerCase();
+  const filt = (ls: string[]) => (norm ? ls.filter((l) => l.includes(norm)) : ls);
+  const m = filt(manual);
+  const a = filt(auto);
+  const section = (title: string, langs: string[]) => (
+    langs.length > 0 && (
+      <div className="space-y-2">
+        <span className="inline-flex items-center gap-1.5 fs-sm lf-text-faint font-semibold uppercase tracking-wide text-[10px]">
+          {title}
+          <span className="px-1.5 py-px rounded-full bg-white/10 text-white/70 font-mono">
+            {langs.length}
+          </span>
+        </span>
+        <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto pr-1">
+          {langs.map((l) => (
+            <button
+              key={l}
+              onClick={() => onPick(l)}
+              className={`px-2.5 py-1.5 rounded-lg font-mono uppercase text-[11px] font-bold border transition-all ${
+                selected === l
+                  ? 'text-white border-white/30 bg-white/10 shadow-md'
+                  : 'lf-text-secondary lf-border bg-white/[0.02] hover:text-white hover:bg-white/5'
+              }`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  );
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-md max-h-[70vh] flex flex-col rounded-2xl lf-surface border lf-border shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b lf-border shrink-0">
+          <span className="text-xs font-bold text-white">{t('fmtSubsAvail')}</span>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="p-1.5 rounded-lg lf-text-muted hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-4 pt-3 shrink-0 space-y-2.5">
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={t('fmtSubsSearchPh')}
+            className="w-full px-3 py-2 rounded-xl lf-surface-raised border lf-border fs-sm lf-text-secondary placeholder-zinc-600 focus:outline-none"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            {SUB_LANGS.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => onPick(p.id)}
+                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${
+                  selected === p.id
+                    ? 'text-white border-white/30 bg-white/10 shadow-md'
+                    : 'lf-text-secondary lf-border bg-white/[0.02] hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="p-4 space-y-3 overflow-y-auto">
+          {section(t('fmtSubsManual'), m)}
+          {section(t('fmtSubsAuto'), a)}
+          {m.length === 0 && a.length === 0 && (
+            <p className="fs-sm lf-text-faint">{t('fmtSubsEmpty')}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 interface TimeRangeSliderProps {
@@ -375,7 +476,8 @@ export const FormatSelector = React.memo(function FormatSelector({ mediaInfo, on
   // querySelector no placeholder (quebrava ao traduzir). Refs são à prova.
   const trimStartRef = useRef<HTMLInputElement>(null);
   const trimEndRef = useRef<HTMLInputElement>(null);
-  const [showSubs, setShowSubs] = useState(!!formatOptions?.writeSubs);
+  const [showSubs, setShowSubs] = useState(!!(formatOptions?.writeSubs || formatOptions?.writeAutoSubs));
+  const [showSubsPicker, setShowSubsPicker] = useState(false);
   const [useUnderscore, setUseUnderscore] = useState(true);
   const [uiScale, setUiScale] = useState(50);
   const [descExpanded, setDescExpanded] = useState(false);
@@ -535,11 +637,12 @@ export const FormatSelector = React.memo(function FormatSelector({ mediaInfo, on
     }
   }, [options.audioOnly, allowedContainers, options.videoFormat, update]);
   // Embutir legendas só vale em mp4/webm/mkv com vídeo (yt-dlp rejeita em áudio)
+  // e nunca com ALL (GAP3: embutir ~150 faixas incha o mux e pode falhar).
   useEffect(() => {
-    if (options.embedSubs && (options.audioOnly || (options.videoFormat && !['mp4', 'webm', 'mkv'].includes(options.videoFormat)))) {
+    if (options.embedSubs && (options.audioOnly || options.subLangs === 'all' || (options.videoFormat && !['mp4', 'webm', 'mkv'].includes(options.videoFormat)))) {
       update({ embedSubs: false });
     }
-  }, [options.videoFormat, options.audioOnly, options.embedSubs, update]);
+  }, [options.videoFormat, options.audioOnly, options.subLangs, options.embedSubs, update]);
   // Manter vídeo só vale com extração de áudio
   useEffect(() => {
     if (!options.audioOnly && options.keepVideo) {
@@ -966,17 +1069,88 @@ export const FormatSelector = React.memo(function FormatSelector({ mediaInfo, on
                 />
                 {showSubs && (
                   <AnimatedAccordion isOpen={showSubs} className="space-y-3 pl-2 border-l-2 border-zinc-800">
+                    {/* Disponibilidade real segundo o probe: resumo compacto +
+                        modal com busca; o clique escolhe o idioma exato. */}
+                    {(() => {
+                      const manual = mediaInfo.subtitleLangs?.manual ?? [];
+                      const auto = mediaInfo.subtitleLangs?.auto ?? [];
+                      if (manual.length === 0 && auto.length === 0) {
+                        return (
+                          <div className="p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/15 text-amber-500/80 fs-sm font-medium">
+                            {t('fmtSubsNone')}
+                          </div>
+                        );
+                      }
+                      // Picker único de idioma (atalhos vivem dentro do modal):
+                      // mostra a seleção atual com × para limpar.
+                      const picked = options.subLangs || '';
+                      return (
+                        <>
+                          <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl lf-surface-40 lf-border">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Subtitles size={14} className={`${getAccentTextClass(settings)} shrink-0`} />
+                              <span className="text-xs lf-text-secondary font-medium truncate">
+                                {t('fmtSubsManual')} ({manual.length}) • {t('fmtSubsAuto')} ({auto.length})
+                              </span>
+                              {picked && (
+                                <button
+                                  onClick={() => update({ subLangs: '' })}
+                                  className="px-1.5 py-0.5 rounded-md bg-white/10 border border-white/20 text-white font-mono uppercase text-[10px] font-bold hover:bg-white/15 transition-colors shrink-0"
+                                >
+                                  {picked.toUpperCase()} ✕
+                                </button>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => setShowSubsPicker(true)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-white/10 hover:bg-white/15 border border-white/10 transition-colors shrink-0"
+                            >
+                              {picked ? t('fmtSubsChange') : t('fmtSubsBrowse')}
+                            </button>
+                          </div>
+                          {showSubsPicker && (
+                            <SubsPickerModal
+                              manual={manual}
+                              auto={auto}
+                              selected={options.subLangs || ''}
+                              onPick={(lang) => update({ subLangs: options.subLangs === lang ? '' : lang })}
+                              onClose={() => setShowSubsPicker(false)}
+                            />
+                          )}
+                          {!options.subLangs && (
+                            <p className="fs-sm lf-text-faint">{t('fmtSubsDefaultNote')}</p>
+                          )}
+                        </>
+                      );
+                    })()}
+                    {/* Proteção: idioma escolhido x probe — avisa antes de baixar. */}
+                    {showSubs && (() => {
+                      const sel = (options.subLangs || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+                      if (sel.length === 0 || sel.includes('all')) return null;
+                      const manual = mediaInfo.subtitleLangs?.manual ?? [];
+                      const auto = mediaInfo.subtitleLangs?.auto ?? [];
+                      if (manual.length === 0 && auto.length === 0) return null;
+                      const missing = sel.filter((l) => !manual.includes(l) && !auto.includes(l));
+                      if (missing.length > 0) {
+                        return (
+                          <div className="p-2.5 rounded-xl bg-rose-500/5 border border-rose-500/15 text-rose-400/80 fs-sm font-medium">
+                            {t('fmtSubsMissingLang')} {missing.join(', ').toUpperCase()}
+                          </div>
+                        );
+                      }
+                      if (!options.writeAutoSubs) {
+                        const onlyAuto = sel.filter((l) => !manual.includes(l) && auto.includes(l));
+                        if (onlyAuto.length > 0) {
+                          return (
+                            <div className="p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/15 text-amber-500/80 fs-sm font-medium">
+                              {t('fmtSubsNeedAuto')} {onlyAuto.join(', ').toUpperCase()}
+                            </div>
+                          );
+                        }
+                      }
+                      return null;
+                    })()}
                     <SmallToggle value={options.writeAutoSubs} onChange={() => update({ writeAutoSubs: !options.writeAutoSubs })} label={t('fmtAutoSubs')} />
-                    <div className="space-y-1.5">
-                      <BlockTitle>{t('fmtSubLang')}</BlockTitle>
-                      <div className="flex flex-wrap gap-2.5">
-                        {SUB_LANGS.map(lang => (
-                          <Btn key={lang.id} active={options.subLangs === lang.id} onClick={() => update({ subLangs: lang.id })} className="py-2">
-                            {lang.label}
-                          </Btn>
-                        ))}
-                      </div>
-                    </div>
                     <div className="space-y-1.5">
                       <BlockTitle>{t('fmtSubFormat')}</BlockTitle>
                   <div className="flex flex-wrap gap-2.5">
@@ -987,11 +1161,14 @@ export const FormatSelector = React.memo(function FormatSelector({ mediaInfo, on
                         ))}
                       </div>
                     </div>
-                    <div className={(!options.audioOnly && (!options.videoFormat || ['mp4', 'webm', 'mkv'].includes(options.videoFormat))) ? '' : 'opacity-30 pointer-events-none'}>
+                    <div className={(!options.audioOnly && options.subLangs !== 'all' && (!options.videoFormat || ['mp4', 'webm', 'mkv'].includes(options.videoFormat))) ? '' : 'opacity-30 pointer-events-none'}>
                       <SmallToggle value={options.embedSubs} onChange={() => update({ embedSubs: !options.embedSubs })} label={t('fmtEmbedSubs')} />
                     </div>
                     {(!!options.audioOnly || (!!options.videoFormat && !['mp4', 'webm', 'mkv'].includes(options.videoFormat))) && (
                       <p className="fs-sm lf-text-faint">{t('fmtEmbedSubsNote')}</p>
+                    )}
+                    {options.subLangs === 'all' && (
+                      <p className="fs-sm lf-text-faint">{t('fmtEmbedSubsAllNote')}</p>
                     )}
                   </AnimatedAccordion>
                 )}

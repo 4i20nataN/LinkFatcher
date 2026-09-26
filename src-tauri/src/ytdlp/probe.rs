@@ -37,6 +37,7 @@ pub async fn ytdlp_probe(
     let bin = super::binary::ytdlp_path(&app)?;
     let mut args = vec!["--dump-json".into(), "--no-download".into()];
     common_auth(&mut args, &options.proxy);
+    args.extend(super::binary::js_runtime_args());
     args.push(options.url);
     let stdout = run_capture(&bin, &args).await?;
     serde_json::from_slice(&stdout).map_err(|e| format!("probe: JSON inválido: {e}"))
@@ -66,6 +67,7 @@ pub async fn ytdlp_probe_playlist(
         "--ignore-errors".into(),
     ];
     common_auth(&mut args, &options.proxy);
+    args.extend(super::binary::js_runtime_args());
     args.push(options.url);
     let stdout = run_capture(&bin, &args).await?;
     let text = String::from_utf8_lossy(&stdout);

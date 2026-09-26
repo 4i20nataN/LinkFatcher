@@ -84,6 +84,7 @@ pub async fn ytdlp_search(
         args.push("--proxy".into());
         args.push(p.clone());
     }
+    args.extend(super::binary::js_runtime_args());
     args.push(build_query(&options.platform, &options.query, max));
     let out = tokio::process::Command::new(&bin)
         .args(&args)

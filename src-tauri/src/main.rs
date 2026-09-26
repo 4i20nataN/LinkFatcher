@@ -24,6 +24,7 @@ fn main() {
       fs::fs_open_path,
       fs::fs_select_folder,
       fs::fs_save_description,
+      fs::fs_fetch_cover,
       fs::fs_stat,
     ])
     .run(tauri::generate_context!())

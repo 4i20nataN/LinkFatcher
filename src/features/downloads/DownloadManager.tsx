@@ -591,6 +591,12 @@ export const DownloadManager: React.FC = () => {
                           {item.error}
                         </div>
                       )}
+                      {/* Aviso não-fatal: vídeo íntegro, acessório pendente (legendas) */}
+                      {isCompleted && item.subWarning && (
+                        <div className="text-[11px] text-amber-400/80 mt-1 break-words line-clamp-3" title={item.subWarning}>
+                          {item.subWarning}
+                        </div>
+                      )}
                     </div>
                   </div>
 

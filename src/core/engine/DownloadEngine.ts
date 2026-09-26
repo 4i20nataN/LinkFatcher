@@ -1,4 +1,4 @@
-import { DownloadItem, MediaInfo, MediaFormat, AppSettings } from '../../types';
+import { DownloadItem, MediaInfo, MediaFormat, AppSettings, PlatformId } from '../../types';
 import type { FormatOptions } from '../../features/downloads/FormatOptions';
 
 type EngineListener = (items: DownloadItem[]) => void;
@@ -283,6 +283,48 @@ class DownloadEngineClass {
     this.notify();
   }
 
+  // Registra um arquivo já salvo em disco (ex. capa) como item concluído,
+  // para aparecer na aba Downloads com 100%. Sem processo, sem parciais.
+  registerCompletedFile(info: {
+    title: string;
+    filePath: string;
+    size: number;
+    platform: PlatformId;
+    url: string;
+    thumbnailUrl?: string;
+    ext: string;
+  }) {
+    const now = new Date().toISOString();
+    const ext = (info.ext || 'jpg').toLowerCase();
+    const newItem: DownloadItem = {
+      id: `file_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+      title: info.title,
+      thumbnailUrl: info.thumbnailUrl || '',
+      platform: info.platform,
+      format: {
+        id: `file-${ext}`,
+        ext,
+        quality: 'original',
+        sizeEst: '',
+        sizeBytes: info.size,
+        codec: '',
+        type: 'image',
+      },
+      sizeTotal: info.size,
+      sizeDownloaded: info.size,
+      progress: 100,
+      speed: 0,
+      eta: 0,
+      status: 'completed',
+      addedAt: now,
+      finishedAt: now,
+      url: info.url,
+      filePath: info.filePath,
+    };
+    this.items.unshift(newItem);
+    this.notify();
+  }
+
   clearCompleted() {
     const removed = this.items.filter(i => ['completed', 'failed', 'cancelled'].includes(i.status));
     this.items = this.items.filter(i => !['completed', 'failed', 'cancelled'].includes(i.status));
@@ -306,6 +348,7 @@ class DownloadEngineClass {
     item.sizeDownloaded = 0;
     item.processing = false;
     item.error = undefined;
+    item.subWarning = undefined;
     this.notify();
     this.processQueue();
   }
@@ -456,6 +499,7 @@ class DownloadEngineClass {
           item.progress = 100;
           item.processing = false;
           if (data.filePath) item.filePath = data.filePath;
+          if (data.subWarning) item.subWarning = data.subWarning;
           if (data.size && data.size > 0) {
             item.sizeTotal = data.size;
             item.sizeDownloaded = data.size;
