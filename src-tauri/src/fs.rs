@@ -158,26 +158,34 @@ pub async fn fs_open_path(_app: AppHandle, target_path: String) -> Result<(), St
 /// Paridade `main.cjs:357-368`.
 #[tauri::command]
 pub async fn fs_select_folder(app: AppHandle, default_path: Option<String>) -> Result<Option<String>, String> {
-    use tauri_plugin_dialog::DialogExt;
-    let default = default_path.and_then(|p| {
-        let path = PathBuf::from(p);
-        if path.is_absolute() && path.exists() {
-            Some(path)
-        } else {
-            None
-        }
-    }).unwrap_or_else(|| {
-        app.path().download_dir().unwrap_or(PathBuf::from("/tmp"))
-    });
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_dialog::DialogExt;
+        let default = default_path.and_then(|p| {
+            let path = PathBuf::from(p);
+            if path.is_absolute() && path.exists() {
+                Some(path)
+            } else {
+                None
+            }
+        }).unwrap_or_else(|| {
+            app.path().download_dir().unwrap_or(PathBuf::from("/tmp"))
+        });
 
-    let dialog = app.dialog().file().set_directory(&default);
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    dialog.pick_folder(move |folder| {
-        let _ = tx.send(folder.map(|f| f.to_string()));
-    });
-    match rx.await {
-        Ok(folder) => Ok(folder),
-        Err(_) => Ok(None),
+        let dialog = app.dialog().file().set_directory(&default);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        dialog.pick_folder(move |folder| {
+            let _ = tx.send(folder.map(|f| f.to_string()));
+        });
+        match rx.await {
+            Ok(folder) => Ok(folder),
+            Err(_) => Ok(None),
+        }
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, default_path);
+        Ok(None)
     }
 }
 
