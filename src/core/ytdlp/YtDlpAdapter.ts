@@ -36,9 +36,21 @@ export function adapterErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+function isAndroid(): boolean {
+  return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+}
+
 export const YtDlpAdapter = {
   async probe(url: string, options?: any) {
     if (isTauri()) {
+      if (isAndroid()) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          return await invoke('plugin:ytdlp|probe', { url, ...options });
+        } catch (e) {
+          console.warn('[YtDlpAdapter] Plugin Android falhou, tentando fallback:', e);
+        }
+      }
       return callTauri('ytdlp_probe', { url, ...options });
     }
     if (isElectron()) {
@@ -59,6 +71,19 @@ export const YtDlpAdapter = {
 
   async download(params: any) {
     if (isTauri()) {
+      if (isAndroid()) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          return await invoke('plugin:ytdlp|download', {
+            id: params.id,
+            url: params.url,
+            format: params.format,
+            outDir: params.output_dir
+          });
+        } catch (e) {
+          console.warn('[YtDlpAdapter] Plugin Android falhou, tentando fallback:', e);
+        }
+      }
       return callTauri('ytdlp_download', params);
     }
     if (isElectron()) {
@@ -69,6 +94,14 @@ export const YtDlpAdapter = {
 
   async cancel(id: string) {
     if (isTauri()) {
+      if (isAndroid()) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          return await invoke('plugin:ytdlp|cancel', { id });
+        } catch (e) {
+          console.warn('[YtDlpAdapter] Plugin Android falhou em cancel:', e);
+        }
+      }
       return callTauri('ytdlp_cancel', { id });
     }
     if (isElectron()) {
@@ -80,6 +113,14 @@ export const YtDlpAdapter = {
 
 export async function probeUrlWithAdapter(options: ProbeOptions): Promise<any> {
   if (isTauri()) {
+    if (isAndroid()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<any>('plugin:ytdlp|probe', options as unknown as Record<string, unknown>);
+      } catch (e) {
+        console.warn('[YtDlpAdapter] Plugin Android falhou em probeUrlWithAdapter:', e);
+      }
+    }
     return callTauri<any>('ytdlp_probe', options);
   }
   // Electron: use IPC bridge (via shim no Tauri/dev)

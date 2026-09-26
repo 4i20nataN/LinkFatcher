@@ -57,6 +57,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 ret.put("duration", streamInfo.duration)
                 ret.put("uploader", streamInfo.uploader ?: "")
                 ret.put("url", streamInfo.url ?: args.url)
+                ret.put("ext", streamInfo.ext ?: "mp4")
                 invoke.resolve(ret)
             } catch (e: Exception) {
                 Log.e("YtDlpPlugin", "Erro ao executar probe", e)
@@ -74,38 +75,54 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         }
 
         executor.execute {
+            val destDir = if (!args.outDir.isNullOrBlank()) {
+                File(args.outDir!!)
+            } else {
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            }
+
+            if (!destDir.exists()) {
+                destDir.mkdirs()
+            }
+
+            val targetTemplate = File(destDir, "%(title)s.%(ext)s").absolutePath
+            val request = YoutubeDLRequest(args.url)
+            request.addOption("-o", targetTemplate)
+            if (!args.format.isNullOrBlank()) {
+                request.addOption("-f", args.format!!)
+            }
+
             try {
-                val destDir = if (!args.outDir.isNullOrBlank()) {
-                    File(args.outDir!!)
-                } else {
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                }
-
-                if (!destDir.exists()) {
-                    destDir.mkdirs()
-                }
-
-                val request = YoutubeDLRequest(args.url)
-                request.addOption("-o", File(destDir, "%(title)s.%(ext)s").absolutePath)
-                if (!args.format.isNullOrBlank()) {
-                    request.addOption("-f", args.format!!)
-                }
-
-                YoutubeDL.getInstance().execute(request, args.id) { progress, etaInSeconds, line ->
+                val response = YoutubeDL.getInstance().execute(request, args.id) { progress, etaInSeconds, line ->
                     val eventData = JSObject()
                     eventData.put("id", args.id)
+                    eventData.put("type", "progress")
                     eventData.put("percent", progress.toInt())
-                    eventData.put("eta", etaInSeconds)
-                    eventData.put("raw", line)
-                    trigger("ytdlp:progress", eventData)
+                    eventData.put("eta", etaInSeconds.toString())
+                    eventData.put("speed", "")
+                    eventData.put("downloaded", 0)
+                    eventData.put("total", 0)
+                    trigger("yt-dlp-progress", eventData)
                 }
+
+                val completeData = JSObject()
+                completeData.put("id", args.id)
+                completeData.put("type", "complete")
+                completeData.put("path", destDir.absolutePath)
+                trigger("yt-dlp-progress", completeData)
 
                 val ret = JSObject()
                 ret.put("success", true)
                 ret.put("id", args.id)
+                ret.put("path", destDir.absolutePath)
                 invoke.resolve(ret)
             } catch (e: Exception) {
                 Log.e("YtDlpPlugin", "Erro ao executar download ${args.id}", e)
+                val errorData = JSObject()
+                errorData.put("id", args.id)
+                errorData.put("type", "error")
+                errorData.put("error", e.message ?: "Falha no download")
+                trigger("yt-dlp-progress", errorData)
                 invoke.reject(e.message ?: "Falha no download nativo")
             }
         }
