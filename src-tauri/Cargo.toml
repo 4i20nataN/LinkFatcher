@@ -21,13 +21,19 @@ sha2 = "0.10"
 # base64: transporte de bytes da capa via IPC (JSON não tem binário).
 base64 = "0.22"
 hex = "0.4"
-tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
-tauri-plugin-updater = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-process = "2"
 tauri-plugin-clipboard-manager = "2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+
+[lib]
+name = "linkfetcher_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
 default = ["custom-protocol"]

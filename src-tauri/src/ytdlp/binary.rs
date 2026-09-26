@@ -177,6 +177,17 @@ pub fn js_runtime_args() -> Vec<String> {
 
 /// `ytdlp_status` — `{ready, missing, binaryPath}` (superconjunto do contrato do
 /// overlay `{ready}`, do reference `{ready, missing}` e do spec `{ready, binaryPath}`).
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn ytdlp_status(_app: AppHandle) -> Result<BinStatus, String> {
+    Ok(BinStatus {
+        ready: true,
+        missing: Vec::new(),
+        binary_path: Some("embedded:youtubedl-android".to_string()),
+    })
+}
+
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn ytdlp_status(app: AppHandle) -> Result<BinStatus, String> {
     let ytdlp = ytdlp_path(&app)?;
@@ -713,6 +724,13 @@ static ENSURE_RUNNING: std::sync::atomic::AtomicBool =
 
 /// Dispara `ensure_binaries` em background e retorna na hora.
 /// Progresso/erro chegam pelo evento `binary-download`. Usado pelo overlay.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn ytdlp_ensure_binaries(_app: AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn ytdlp_ensure_binaries(app: AppHandle) -> Result<(), String> {
     let handle = app.clone();
