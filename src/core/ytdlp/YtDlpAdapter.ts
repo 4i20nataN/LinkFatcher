@@ -36,15 +36,23 @@ export function adapterErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+function isAndroid(): boolean {
+  return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+}
+
+export { isAndroid };
+
 export const YtDlpAdapter = {
   async probe(url: string, options?: any) {
     if (isTauri()) {
+      // No Android os comandos Rust (`ytdlp_probe`, ...) encaminham ao
+      // yt-dlp embarcado via plugin Kotlin — mesmo transporte do desktop.
       return callTauri('ytdlp_probe', { url, ...options });
     }
     if (isElectron()) {
       return (window as any).electron.invoke('yt-dlp-probe', { url, ...options });
     }
-    throw new Error('No transport available (desktop only)');
+    throw new Error('No transport available (requires app)');
   },
 
   async search(query: string, platform = 'youtube', maxResults = 10, options?: any) {
@@ -54,7 +62,7 @@ export const YtDlpAdapter = {
     if (isElectron()) {
       return (window as any).electron.invoke('yt-dlp-search', { query, platform, maxResults, ...options });
     }
-    throw new Error('No transport available (desktop only)');
+    throw new Error('No transport available (requires app)');
   },
 
   async download(params: any) {
@@ -64,7 +72,7 @@ export const YtDlpAdapter = {
     if (isElectron()) {
       return (window as any).electron.invoke('yt-dlp-download', params);
     }
-    throw new Error('No transport available (desktop only)');
+    throw new Error('No transport available (requires app)');
   },
 
   async cancel(id: string) {
@@ -74,19 +82,44 @@ export const YtDlpAdapter = {
     if (isElectron()) {
       return (window as any).electron.invoke('yt-dlp-cancel', id);
     }
-    throw new Error('No transport available (desktop only)');
+    throw new Error('No transport available (requires app)');
   },
 };
 
+// Cache em memória do dump-json por URL: re-analisar o mesmo link (retry,
+// voltar de tela, clipboard) não paga outra extração — no yt-dlp embarcado
+// do Android cada probe custa segundos em aparelho fraco. TTL curto: o
+// catálogo muda, mas não em minutos.
+const PROBE_CACHE_TTL_MS = 10 * 60 * 1000;
+const PROBE_CACHE_MAX = 20;
+const probeCache = new Map<string, { at: number; data: any }>();
+
+function probeCacheKey(options: ProbeOptions): string {
+  return `${options.url}::${options.proxy ?? ''}`;
+}
+
 export async function probeUrlWithAdapter(options: ProbeOptions): Promise<any> {
+  const key = probeCacheKey(options);
+  const hit = probeCache.get(key);
+  if (hit && Date.now() - hit.at < PROBE_CACHE_TTL_MS) {
+    return hit.data;
+  }
+  probeCache.delete(key);
+  let data: any;
   if (isTauri()) {
-    return callTauri<any>('ytdlp_probe', options);
+    data = await callTauri<any>('ytdlp_probe', options);
+  } else if (isElectron()) {
+    // Electron: use IPC bridge (via shim no Tauri/dev)
+    data = await callElectron<any>('yt-dlp-probe', options);
+  } else {
+    throw new Error('No transport available (requires app)');
   }
-  // Electron: use IPC bridge (via shim no Tauri/dev)
-  if (isElectron()) {
-    return callElectron<any>('yt-dlp-probe', options);
+  probeCache.set(key, { at: Date.now(), data });
+  if (probeCache.size > PROBE_CACHE_MAX) {
+    const oldest = probeCache.keys().next().value;
+    if (oldest !== undefined) probeCache.delete(oldest);
   }
-  throw new Error('No transport available (desktop only)');
+  return data;
 }
 
 export async function probePlaylistWithAdapter(options: { url: string; proxy?: string }): Promise<any> {
@@ -96,7 +129,7 @@ export async function probePlaylistWithAdapter(options: { url: string; proxy?: s
   if (isElectron()) {
     return callElectron<any>('yt-dlp-probe-playlist', options);
   }
-  throw new Error('No transport available (desktop only)');
+  throw new Error('No transport available (requires app)');
 }
 
 export async function searchVideosWithAdapter(options: SearchOptions): Promise<SearchResult[]> {
@@ -107,7 +140,7 @@ export async function searchVideosWithAdapter(options: SearchOptions): Promise<S
   if (isElectron()) {
     return callElectron<SearchResult[]>('yt-dlp-search', options);
   }
-  throw new Error('No transport available (desktop only)');
+  throw new Error('No transport available (requires app)');
 }
 
 export async function getYtDlpStatusWithAdapter(): Promise<{ ready: boolean; binaryPath?: string }> {

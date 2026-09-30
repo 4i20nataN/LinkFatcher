@@ -4,6 +4,9 @@ export interface AppSettings {
   iconStyle: 'emoji' | 'lucide-mono' | 'lucide-color';
   language: 'pt' | 'en';
   defaultDir: string;
+  /** Android: subpasta dentro de Downloads públicos (MediaStore). Opcional —
+      ausente = "LinkFetcher". Path arbitrário é bloqueado pelo scoped storage. */
+  mobilePublicSubdir?: string;
   bandLimit: number; // KB/s, 0 = unlimited
   maxConcurrent: number;
   autoDownload: boolean;

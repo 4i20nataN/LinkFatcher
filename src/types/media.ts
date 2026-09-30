@@ -33,4 +33,6 @@ export interface MediaInfo {
   description?: string;
   status: 'idle' | 'analyzing' | 'success' | 'failed';
   error?: string;
+  /** Idiomas de legenda do probe: manuais (`subtitles`) e automáticas (`automatic_captions`). */
+  subtitleLangs?: { manual: string[]; auto: string[] };
 }

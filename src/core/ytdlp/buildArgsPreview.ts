@@ -123,8 +123,13 @@ export function buildArgsPreview(item: {
 
   if (item.writeSubs) args.push('--write-subs');
   if (item.writeAutoSubs) args.push('--write-auto-subs');
-  if (item.subLangs) args.push('--sub-langs', item.subLangs);
-  if (item.subFormat) args.push('--sub-format', item.subFormat);
+  // Espelho do gate em args.rs: --sub-langs/--sub-format sem escrita são
+  // ignorados pelo yt-dlp (placebo) — o preview não deve mostrá-los.
+  const subsActive = !!(item.writeSubs || item.writeAutoSubs || item.embedSubs);
+  if (subsActive) {
+    if (item.subLangs) args.push('--sub-langs', item.subLangs);
+    if (item.subFormat) args.push('--sub-format', item.subFormat);
+  }
   if (item.embedSubs) args.push('--embed-subs');
 
   if (item.writeThumbnail) args.push('--write-thumbnail');

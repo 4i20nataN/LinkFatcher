@@ -22,13 +22,15 @@ export function setupElectronShim() {
           return path as unknown as T;
         }
         case 'shell:openPath': {
+          // Chave snake_case: o comando Rust declara `target_path` e o Tauri
+          // casa argumentos pelo nome exato (camelCase rejeita com erro).
           const targetPath = (args[0] as string) || '';
-          await invoke('fs_open_path', { targetPath });
+          await invoke('fs_open_path', { target_path: targetPath });
           return undefined as unknown as T;
         }
         case 'shell:selectFolder': {
           const defaultPath = (args[0] as string) || undefined;
-          const selected = await invoke<string | null>('fs_select_folder', { defaultPath });
+          const selected = await invoke<string | null>('fs_select_folder', { default_path: defaultPath });
           return selected as unknown as T;
         }
         case 'save-description': {
@@ -42,7 +44,7 @@ export function setupElectronShim() {
         case 'fs:stat': {
           const payload = args[0] as { filePath?: string } | string;
           const filePath = typeof payload === 'string' ? payload : (payload?.filePath || '');
-          const res = await invoke<T>('fs_stat', { filePath });
+          const res = await invoke<T>('fs_stat', { file_path: filePath });
           return res;
         }
         case 'yt-dlp-probe': {
@@ -65,7 +67,9 @@ export function setupElectronShim() {
           return invoke<T>('ytdlp_status');
         }
         default: {
-          console.warn(`[electronShim] Unhandled invoke channel: ${channel}`);
+          // Canais desktop-only caem aqui no mobile: debug em vez de warn
+          // para não poluir o console do Android a cada boot.
+          console.debug(`[electronShim] Unhandled invoke channel: ${channel}`);
           return Promise.resolve(undefined as unknown as T);
         }
       }

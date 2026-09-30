@@ -40,6 +40,11 @@ pub struct DownloadParams {
     pub sub_format: Option<String>,
     #[serde(default)]
     pub embed_subs: Option<bool>,
+    /// Interno (nunca vem do frontend): motivo da 1ª falha por legendas.
+    /// Quando Some, o download re-executa sem flags de legenda (GAP1: um
+    /// acessório 429 não pode anular o vídeo) e o `complete` carrega o aviso.
+    #[serde(default)]
+    pub subs_fallback: Option<String>,
     #[serde(default)]
     pub write_thumbnail: Option<bool>,
     #[serde(default)]
@@ -76,6 +81,16 @@ pub struct DownloadParams {
     pub concurrent_fragments: Option<f64>,
     #[serde(default)]
     pub retries: Option<f64>,
+    /// Android: título p/ a notificação nativa de progresso/conclusão.
+    /// Não vira argv. Desktop ignora (lido só no `cfg android`).
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub title: Option<String>,
+    /// Android: subpasta pública de destino (MediaStore). Não vira argv —
+    /// só repassada ao plugin Kotlin. Desktop ignora (lido só no `cfg android`).
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub mobile_public_subdir: Option<String>,
 }
 
 fn is_true(v: &Option<bool>) -> bool {
@@ -449,13 +464,21 @@ pub fn build_args(
     if is_true(&params.write_auto_subs) {
         args.push("--write-auto-subs".to_owned());
     }
-    if let Some(l) = non_empty(&params.sub_langs) {
-        args.push("--sub-langs".to_owned());
-        args.push(l.to_owned());
-    }
-    if let Some(f) = non_empty(&params.sub_format) {
-        args.push("--sub-format".to_owned());
-        args.push(f.to_owned());
+    // `--sub-langs`/`--sub-format` sem nenhuma flag de escrita são ignorados
+    // pelo yt-dlp (`process_subtitles` retorna None) — virariam placebo
+    // silencioso (ex. master desligado mantendo idioma escolhido). Só emite
+    // quando há escrita (`--embed-subs` implica escrita no próprio yt-dlp).
+    let subs_active =
+        is_true(&params.write_subs) || is_true(&params.write_auto_subs) || is_true(&params.embed_subs);
+    if subs_active {
+        if let Some(l) = non_empty(&params.sub_langs) {
+            args.push("--sub-langs".to_owned());
+            args.push(l.to_owned());
+        }
+        if let Some(f) = non_empty(&params.sub_format) {
+            args.push("--sub-format".to_owned());
+            args.push(f.to_owned());
+        }
     }
     if is_true(&params.embed_subs) {
         args.push("--embed-subs".to_owned());
@@ -746,5 +769,32 @@ mod tests {
             ppa,
             "ffmpeg:-af loudnorm=I=-16:TP=-1.5:LRA=11 -vf unsharp=5:5:1.0"
         );
+    }
+
+    #[test]
+    fn sub_langs_without_write_flags_is_not_emitted() {
+        // Idioma/formato sem --write-subs/--write-auto-subs/--embed-subs são
+        // ignorados pelo yt-dlp (placebo): o builder não deve emiti-los.
+        let p = DownloadParams {
+            url: "https://x/y".into(),
+            sub_langs: Some("en".into()),
+            sub_format: Some("srt".into()),
+            ..Default::default()
+        };
+        let a = build_args(&p, &dir(), None);
+        assert!(!a.iter().any(|x| x == "--sub-langs"), "{a:?}");
+        assert!(!a.iter().any(|x| x == "--sub-format"), "{a:?}");
+        // Com escrita ativa, voltam a ser emitidos.
+        let p2 = DownloadParams {
+            url: "https://x/y".into(),
+            write_auto_subs: Some(true),
+            sub_langs: Some("en".into()),
+            sub_format: Some("srt".into()),
+            ..Default::default()
+        };
+        let a2 = build_args(&p2, &dir(), None);
+        let joined = a2.join(" ");
+        assert!(joined.contains("--sub-langs en"), "{joined}");
+        assert!(joined.contains("--sub-format srt"), "{joined}");
     }
 }

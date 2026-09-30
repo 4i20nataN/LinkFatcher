@@ -1,4 +1,4 @@
-import { DownloadItem, MediaInfo, MediaFormat, AppSettings } from '../../types';
+import { DownloadItem, MediaInfo, MediaFormat, AppSettings, PlatformId } from '../../types';
 import type { FormatOptions } from '../../features/downloads/FormatOptions';
 
 type EngineListener = (items: DownloadItem[]) => void;
@@ -45,6 +45,7 @@ class DownloadEngineClass {
     iconStyle: 'lucide-mono',
     language: 'pt',
     defaultDir: '',
+    mobilePublicSubdir: 'LinkFetcher',
     bandLimit: 0,
     maxConcurrent: 3,
     autoDownload: true,
@@ -283,6 +284,48 @@ class DownloadEngineClass {
     this.notify();
   }
 
+  // Registra um arquivo já salvo em disco (ex. capa) como item concluído,
+  // para aparecer na aba Downloads com 100%. Sem processo, sem parciais.
+  registerCompletedFile(info: {
+    title: string;
+    filePath: string;
+    size: number;
+    platform: PlatformId;
+    url: string;
+    thumbnailUrl?: string;
+    ext: string;
+  }) {
+    const now = new Date().toISOString();
+    const ext = (info.ext || 'jpg').toLowerCase();
+    const newItem: DownloadItem = {
+      id: `file_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+      title: info.title,
+      thumbnailUrl: info.thumbnailUrl || '',
+      platform: info.platform,
+      format: {
+        id: `file-${ext}`,
+        ext,
+        quality: 'original',
+        sizeEst: '',
+        sizeBytes: info.size,
+        codec: '',
+        type: 'image',
+      },
+      sizeTotal: info.size,
+      sizeDownloaded: info.size,
+      progress: 100,
+      speed: 0,
+      eta: 0,
+      status: 'completed',
+      addedAt: now,
+      finishedAt: now,
+      url: info.url,
+      filePath: info.filePath,
+    };
+    this.items.unshift(newItem);
+    this.notify();
+  }
+
   clearCompleted() {
     const removed = this.items.filter(i => ['completed', 'failed', 'cancelled'].includes(i.status));
     this.items = this.items.filter(i => !['completed', 'failed', 'cancelled'].includes(i.status));
@@ -306,6 +349,7 @@ class DownloadEngineClass {
     item.sizeDownloaded = 0;
     item.processing = false;
     item.error = undefined;
+    item.subWarning = undefined;
     this.notify();
     this.processQueue();
   }
@@ -380,6 +424,7 @@ class DownloadEngineClass {
       const params = {
         id: item.id,
         url: item.url,
+        title: item.title,
         format: item.formatString,
         audioOnly: item.audioOnly,
         audioFormat: item.audioFormat,
@@ -407,20 +452,18 @@ class DownloadEngineClass {
         videoSharpen: item.videoSharpen,
         bandLimit: item.bandLimit,
         noOverwrites: item.noOverwrites,
+        // Android: subpasta pública (MediaStore). `??` preserva "" (raiz de
+        // Downloads); ausente = padrão. Desktop ignora.
+        mobilePublicSubdir: this.settings.mobilePublicSubdir ?? 'LinkFetcher',
         outputDir,
       };
 
-      // Listen for yt-dlp-progress events (compat Electron).
-      // Um listener por download, filtrado por id; `finish` é idempotente e
-      // sempre chamado no fim (conclusão/erro/invoke) para não vazar.
-      const unlisten = await listen('yt-dlp-progress', (event) => {
-        const data = event.payload as any;
-        if (data.id !== item.id) return;
+      // Handler de progresso unificado (suporta listen do Tauri desktop e CustomEvent no Android)
+      const handleProgressData = (data: any) => {
+        if (!data || data.id !== item.id) return;
 
         if (data.type === 'progress') {
           item.progress = typeof data.percent === 'number' ? data.percent : (parseFloat(data.percent) || 0);
-          // Velocidade do yt-dlp é instantânea por intervalo — oscila muito.
-          // EMA (α=0.4) estabiliza o número sem mascarar queda real (0 entra direto).
           const rawSpeed = parseFloat(data.speed) || 0;
           item.speed = rawSpeed <= 0 || item.speed <= 0 ? rawSpeed : item.speed + 0.4 * (rawSpeed - item.speed);
           item.eta = parseFloat(data.eta) || 0;
@@ -430,16 +473,16 @@ class DownloadEngineClass {
           if (data.total && data.total > 0) {
             item.sizeTotal = data.total;
           }
-          // Progresso chega várias vezes por segundo: re-render no máximo 4x/s.
-          // Valores continuam atualizados; estados finais passam direto.
           const now = Date.now();
-          if (now - (this.lastProgressNotify.get(item.id) ?? 0) >= 250) {
+          // No Android a lista re-renderiza cards animados (motion) a cada
+          // notify: 500ms é indistinguível no olho e corta os renders pela
+          // metade; desktop mantém 250ms.
+          const throttleMs = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent) ? 500 : 250;
+          if (now - (this.lastProgressNotify.get(item.id) ?? 0) >= throttleMs) {
             this.lastProgressNotify.set(item.id, now);
             this.notify(false);
           }
         } else if (data.type === 'processing') {
-          // Stdout fechou mas o processo segue (ffmpeg cortando em silêncio):
-          // mantém `downloading` e sinaliza a fase p/ UI honesta.
           if (item.status === 'downloading') {
             item.processing = true;
             item.speed = 0;
@@ -447,7 +490,6 @@ class DownloadEngineClass {
             this.notify();
           }
         } else if (data.type === 'complete') {
-          // Conclusão tardia (ex. corte local após cancel) não ressuscita.
           if (item.status === 'paused' || item.status === 'cancelled') {
             finish();
             return;
@@ -456,6 +498,7 @@ class DownloadEngineClass {
           item.progress = 100;
           item.processing = false;
           if (data.filePath) item.filePath = data.filePath;
+          if (data.subWarning) item.subWarning = data.subWarning;
           if (data.size && data.size > 0) {
             item.sizeTotal = data.size;
             item.sizeDownloaded = data.size;
@@ -466,8 +509,6 @@ class DownloadEngineClass {
           finish();
           this.notify();
         } else if (data.type === 'error') {
-          // Pausa/cancelamento matam o processo de propósito: o erro tardio
-          // do kill não pode sobrescrever a intenção do usuário.
           if (item.status === 'paused' || item.status === 'cancelled') {
             finish();
             return;
@@ -480,13 +521,29 @@ class DownloadEngineClass {
           finish();
           this.notify();
         }
+      };
+
+      // Listen for yt-dlp-progress events (desktop Tauri)
+      const unlisten = await listen('yt-dlp-progress', (event) => {
+        handleProgressData(event.payload);
       });
+
+      // Listen for yt-dlp-progress CustomEvents (Android WebView)
+      const onCustomProgress = (e: Event) => {
+        handleProgressData((e as CustomEvent).detail);
+      };
+      if (typeof window !== 'undefined') {
+        window.addEventListener('yt-dlp-progress', onCustomProgress);
+      }
 
       let settled = false;
       const finish = () => {
         if (settled) return;
         settled = true;
         try { unlisten(); } catch { /* unlisten idempotente */ }
+        if (typeof window !== 'undefined') {
+          window.removeEventListener('yt-dlp-progress', onCustomProgress);
+        }
       };
 
       // Store unlisten and kill hook for cancel/pause. O status já foi

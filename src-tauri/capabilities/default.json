@@ -7,10 +7,10 @@
   ],
   "permissions": [
     "core:default",
-    "updater:default",
     "process:default",
     "dialog:default",
-    "fs:write-files",
+    "fs:allow-download-write",
+    "notification:default",
     "clipboard-manager:allow-read-text"
   ]
 }

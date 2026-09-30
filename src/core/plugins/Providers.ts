@@ -36,6 +36,15 @@ function resolveFormatSize(f: Record<string, unknown>, totalDuration: number): {
 
 function buildMediaInfoFromProbe(metadata: Record<string, unknown>, url: string, platform: PlatformId): MediaInfo {
   const totalDuration = (metadata.duration as number) || 0;
+  // Idiomas de legenda do probe (`subtitles` = manuais,
+  // `automatic_captions` = geradas). Chaves ordenadas, minúsculas.
+  const probeSubLangs = (v: unknown): string[] => {
+    if (!v || typeof v !== 'object') return [];
+    return Object.keys(v as Record<string, unknown>)
+      .map((l) => l.trim().toLowerCase())
+      .filter(Boolean)
+      .sort();
+  };
   const formats = (metadata.formats as Array<Record<string, unknown>> | undefined)
     ?.filter((f) => {
       const ext = ((f.ext as string) || '').toLowerCase();
@@ -91,7 +100,11 @@ function buildMediaInfoFromProbe(metadata: Record<string, unknown>, url: string,
     originalUrl: url,
     thumbnailUrl: (metadata.thumbnail as string) || '',
     description: (metadata.description as string) || undefined,
-    status: 'success'
+    status: 'success',
+    subtitleLangs: {
+      manual: probeSubLangs(metadata.subtitles),
+      auto: probeSubLangs(metadata.automatic_captions),
+    },
   };
 }
 

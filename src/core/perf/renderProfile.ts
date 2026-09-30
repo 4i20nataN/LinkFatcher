@@ -18,5 +18,10 @@ const isTauri =
 // and is absent in WebKitGTK/Firefox.
 const isChromium =
   typeof window !== 'undefined' && !!(window as unknown as { chrome?: unknown }).chrome;
+// Android WebView é Chromium, mas com GPU móvel e bateria: o perfil 'full'
+// (canvas 60fps + blur(120px) animado + backdrop-blur + bitmap 1MB) derruba
+// o scroll no celular. Força 'efficient' — mesmos elementos, custo mínimo.
+const isAndroid =
+  typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 
-export const RENDER_PROFILE: 'full' | 'efficient' = isTauri && !isChromium ? 'efficient' : 'full';
+export const RENDER_PROFILE: 'full' | 'efficient' = (isTauri && !isChromium) || isAndroid ? 'efficient' : 'full';

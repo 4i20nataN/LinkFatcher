@@ -1,7 +1,7 @@
 {
   "name": "linkfetcher",
   "private": true,
-  "version": "1.2.2",
+  "version": "1.3.0",
   "description": "LinkFetcher-Tauri - desktop yt-dlp frontend (Tauri v2)",
   "author": {
     "name": "Natan Vanim",
@@ -19,6 +19,7 @@
     "@emotion/is-prop-valid": "^1.4.0",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@tauri-apps/cli": "~2.11.5",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.4.21",
@@ -33,12 +34,13 @@
     "vite": "^6.2.3"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-clipboard-manager": "^2.3.3",
-    "@tauri-apps/plugin-dialog": "^2.7.3",
-    "@tauri-apps/plugin-fs": "^2.5.2",
-    "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-shell": "^2.3.6",
-    "@tauri-apps/plugin-updater": "^2.11.0"
+    "@tauri-apps/api": "~2.11.1",
+    "@tauri-apps/plugin-clipboard-manager": "~2.3.3",
+    "@tauri-apps/plugin-dialog": "~2.7.3",
+    "@tauri-apps/plugin-fs": "~2.5.2",
+    "@tauri-apps/plugin-notification": "~2.4.0",
+    "@tauri-apps/plugin-process": "~2.3.1",
+    "@tauri-apps/plugin-shell": "~2.3.6",
+    "@tauri-apps/plugin-updater": "~2.11.0"
   }
 }

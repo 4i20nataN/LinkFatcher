@@ -40,6 +40,12 @@ export default defineConfig(() => {
       },
     },
     server: {
+      // No `tauri android dev` o WebView roda no celular: localhost seria o
+      // próprio aparelho. Escutar em 0.0.0.0 permite alcançar o dev-server
+      // pelo IP do host (ex.: `tauri android dev --host`).
+      host: '0.0.0.0',
+      port: 1420,
+      strictPort: true,
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },

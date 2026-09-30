@@ -165,8 +165,11 @@ export const DownloadManager: React.FC = () => {
     if (!window.electron?.invoke) return;
     const target = item.filePath || settings.defaultDir || await window.electron.invoke('shell:getDownloadsPath');
     if (target) {
-      window.electron.invoke('shell:openPath', target).catch(() => {
-        showToast(settings.language === 'en' ? 'Failed to open folder' : 'Falha ao abrir pasta');
+      window.electron.invoke('shell:openPath', target).catch((err: any) => {
+        // Erro real no toast (não genérico): sem isso o "não abre" é mudo e
+        // impossível de diagnosticar sem logcat.
+        const detail = typeof err === 'string' ? err : err?.message;
+        showToast((settings.language === 'en' ? 'Failed to open: ' : 'Falha ao abrir: ') + (detail || target));
       });
     }
   };
@@ -214,7 +217,7 @@ export const DownloadManager: React.FC = () => {
 
       {/* Header Info */}
       <div className="text-center md:text-left space-y-2">
-        <h2 className="font-display font-extrabold text-3xl md:text-4xl text-white tracking-tight">
+        <h2 className="font-display font-extrabold text-2xl md:text-4xl text-white tracking-tight leading-tight break-words">
           {t('downloadsTitle')}
         </h2>
         <p className="lf-text-secondary text-sm md:text-base">
@@ -294,7 +297,7 @@ export const DownloadManager: React.FC = () => {
       {/* Media Type Tabs + Status Chips */}
       <div className="space-y-2">
         {/* Row 1: Media type tabs (underline style, full width) */}
-        <div className="flex items-center gap-1 border-b lf-border">
+        <div className="flex items-center gap-1 border-b lf-border overflow-x-auto overscroll-contain">
           {[
             { id: 'all', label: settings.language === 'en' ? 'All' : 'Todos', icon: null },
             { id: 'audio', label: 'Audio', icon: '🔊' },
@@ -311,7 +314,7 @@ export const DownloadManager: React.FC = () => {
                 key={tab.id}
                 onClick={() => setMediaFilter(tab.id as any)}
                 className={`
-                  flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold transition-all relative
+                  flex-1 shrink-0 min-w-16 flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold transition-all relative
                   ${isActive ? getAccentTextClass(settings) : 'lf-text-muted hover:text-zinc-300'}
                 `}
               >
@@ -589,6 +592,12 @@ export const DownloadManager: React.FC = () => {
                       {isFailed && item.error && (
                         <div className="text-[11px] text-rose-400/80 mt-1 break-words line-clamp-3" title={item.error}>
                           {item.error}
+                        </div>
+                      )}
+                      {/* Aviso não-fatal: vídeo íntegro, acessório pendente (legendas) */}
+                      {isCompleted && item.subWarning && (
+                        <div className="text-[11px] text-amber-400/80 mt-1 break-words line-clamp-3" title={item.subWarning}>
+                          {item.subWarning}
                         </div>
                       )}
                     </div>
