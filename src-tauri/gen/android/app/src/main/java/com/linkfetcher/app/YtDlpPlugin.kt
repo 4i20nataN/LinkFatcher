@@ -739,6 +739,30 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    // Publica um arquivo da pasta privada (ex. backup JSON salvo via
+    // plugin-fs) em Downloads públicos. Generalização do publish do execute.
+    @Command
+    fun publishFile(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(OpenArgs::class.java)
+            val file = File(args.path.trim().trim('\'', '"'))
+            if (!file.exists() || !file.isFile) {
+                invoke.reject("arquivo não encontrado")
+                return
+            }
+            val uri = publishToPublicDownloads(file, null)
+            if (uri == null) {
+                invoke.reject("falha ao publicar em Downloads")
+                return
+            }
+            Log.i(TAG, "publishFile ok: ${file.name} -> $uri")
+            invoke.resolve(JSObject().apply { put("uri", uri) })
+        } catch (e: Exception) {
+            Log.e(TAG, "publishFile falhou", e)
+            invoke.reject(e.message ?: "Falha ao publicar arquivo")
+        }
+    }
+
     @Command
     fun openFile(invoke: Invoke) {
         val args = invoke.parseArgs(OpenArgs::class.java)

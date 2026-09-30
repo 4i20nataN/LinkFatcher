@@ -106,14 +106,13 @@ jobs:
       - name: Build release Android (APK + AAB assinados)
         run: npx tauri android build
 
-      - name: Renomear artefatos com a versão
+      - name: Renomear artefatos
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           APK_DIR=src-tauri/gen/android/app/build/outputs
           cp "$APK_DIR/apk/universal/release/app-universal-release.apk" \
-            "$APK_DIR/LinkFetcher_${VERSION}_android-universal.apk"
+            "$APK_DIR/LinkFetcher.apk"
           cp "$APK_DIR/bundle/universalRelease/app-universal-release.aab" \
-            "$APK_DIR/LinkFetcher_${VERSION}_android-universal.aab"
+            "$APK_DIR/LinkFetcher.aab"
 
       - name: Aguardar release existir (job desktop cria)
         env:
@@ -130,9 +129,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           APK_DIR=src-tauri/gen/android/app/build/outputs
           gh release upload "${GITHUB_REF_NAME}" \
-            "$APK_DIR/LinkFetcher_${VERSION}_android-universal.apk" \
-            "$APK_DIR/LinkFetcher_${VERSION}_android-universal.aab" \
+            "$APK_DIR/LinkFetcher.apk" \
+            "$APK_DIR/LinkFetcher.aab" \
             --clobber

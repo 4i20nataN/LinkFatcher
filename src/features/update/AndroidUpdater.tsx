@@ -51,7 +51,7 @@ export function AndroidUpdater() {
       const rel = await res.json();
       const tag: string = rel.tag_name || '';
       const apk = (rel.assets || []).find(
-        (a: any) => typeof a?.name === 'string' && a.name.endsWith('_android-universal.apk')
+        (a: any) => typeof a?.name === 'string' && a.name === 'LinkFetcher.apk'
       );
       if (!tag || !apk?.browser_download_url) {
         throw new Error(en ? 'No Android APK in latest release' : 'Release atual sem APK Android');
@@ -76,7 +76,7 @@ export function AndroidUpdater() {
     setError('');
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const fileName = `LinkFetcher_${remote.replace(/^v/i, '')}_android-universal.apk`;
+      const fileName = 'LinkFetcher.apk';
       await invoke('plugin:ytdlp|updateDownload', { url: apkUrl, fileName });
       // O DownloadManager do sistema assume daqui (notificação + instalador).
     } catch (e: any) {

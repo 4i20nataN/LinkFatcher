@@ -111,9 +111,23 @@ export const SettingsView: React.FC = () => {
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     try {
       const dataStr = StorageService.exportLinksBackup();
+      if (isAndroid) {
+        // WebView ignora `a[download]`: salva via plugin-fs e publica em
+        // Downloads (mesmo caminho dos downloads concluídos).
+        const { invoke } = await import('@tauri-apps/api/core');
+        const { writeFile } = await import('@tauri-apps/plugin-fs');
+        const { join } = await import('@tauri-apps/api/path');
+        const dir = mobileDir || await invoke<string>('fs_get_downloads_path');
+        const filename = `linkfetcher-links-${new Date().toISOString().slice(0, 10)}.json`;
+        const filePath = await join(dir, filename);
+        await writeFile(filePath, new TextEncoder().encode(dataStr));
+        await invoke('plugin:ytdlp|publishFile', { path: filePath });
+        showToast(t('backupSuccess'));
+        return;
+      }
       const blob = new Blob([dataStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
