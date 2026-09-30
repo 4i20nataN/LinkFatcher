@@ -23,9 +23,15 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
-        ndk {
-            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64"))
-        }
+    ndk {
+        // CI de release: LINKFETCHER_ABIS="arm64-v8a" gera build só dessa ABI
+        // (APK leve); vazio = todas (universal). Splits acompanham o filtro.
+        val abis = System.getenv("LINKFETCHER_ABIS")
+            ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+            ?.takeIf { it.isNotEmpty() }
+            ?: listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+        abiFilters.addAll(abis)
+    }
     }
     packaging {
         jniLibs {
@@ -36,7 +42,12 @@ android {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            // Mesmo filtro do ndk acima: split sem .so correspondente falha.
+            val splitAbis = System.getenv("LINKFETCHER_ABIS")
+                ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+                ?.takeIf { it.isNotEmpty() }
+                ?: listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            include(*splitAbis.toTypedArray())
             isUniversalApk = true
         }
     }
