@@ -12,15 +12,20 @@ import {
 import { searchVideosWithAdapter, adapterErrorMessage } from '../../core/ytdlp/YtDlpAdapter';
 
 const CACHE_MAX = 20;
-const searchCache = new Map<string, SearchResult[]>();
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const searchCache = new Map<string, { at: number; value: SearchResult[] }>();
 
 function cacheGet(key: string): SearchResult[] | undefined {
-  const val = searchCache.get(key);
-  if (val !== undefined) {
+  const hit = searchCache.get(key);
+  if (hit === undefined) return undefined;
+  if (Date.now() - hit.at >= CACHE_TTL_MS) {
     searchCache.delete(key);
-    searchCache.set(key, val);
+    return undefined;
   }
-  return val;
+  // LRU: re-insere para marcar como recente.
+  searchCache.delete(key);
+  searchCache.set(key, hit);
+  return hit.value;
 }
 
 function cacheSet(key: string, value: SearchResult[]) {
@@ -28,7 +33,7 @@ function cacheSet(key: string, value: SearchResult[]) {
     const firstKey = searchCache.keys().next().value!;
     searchCache.delete(firstKey);
   }
-  searchCache.set(key, value);
+  searchCache.set(key, { at: Date.now(), value });
 }
 
 const SearchResultCard = React.memo<{

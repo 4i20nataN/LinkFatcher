@@ -196,6 +196,9 @@ export const LinkAnalyzer: React.FC = () => {
   const [playlistInfo, setPlaylistInfo] = useState<PlaylistInfo | null>(null);
   const [playlistLoading, setPlaylistLoading] = useState(false);
   const [playlistExpanded, setPlaylistExpanded] = useState(false);
+  // Enfileiramento da playlist (pool de probes): progresso + cancelamento.
+  const [enqueueProgress, setEnqueueProgress] = useState<{ done: number; total: number } | null>(null);
+  const enqueueCancelRef = useRef(false);
   const [formatOptions, setFormatOptions] = useState<FormatOptions>({
     format: 'bestvideo+bestaudio/best',
     audioOnly: false,
@@ -259,9 +262,16 @@ export const LinkAnalyzer: React.FC = () => {
     }
   }, []);
 
+  // Persist com debounce: o estado inclui o dump parseado (100KB–1MB) e o
+  // efeito anterior serializava a cada tecla/seleção na main thread.
   useEffect(() => {
-    const state = { url, mediaInfo, selectedFormat, formatOptions };
-    localStorage.setItem('universal_downloader_analyzer_state', JSON.stringify(state));
+    const t = setTimeout(() => {
+      try {
+        const state = { url, mediaInfo, selectedFormat, formatOptions };
+        localStorage.setItem('universal_downloader_analyzer_state', JSON.stringify(state));
+      } catch { /* quota cheia: estado volátil, sem quebrar a análise */ }
+    }, 800);
+    return () => clearTimeout(t);
   }, [url, mediaInfo, selectedFormat, formatOptions]);
 
   const handleAnalyze = async (urlToAnalyze: string) => {
@@ -417,21 +427,38 @@ export const LinkAnalyzer: React.FC = () => {
   };
 
   const handleDownloadAllPlaylist = async () => {
-    if (!playlistInfo || playlistInfo.items.length === 0) return;
+    if (!playlistInfo || playlistInfo.items.length === 0 || enqueueProgress) return;
 
-    // Probe each item to get its formats, then add to queue
-    for (const item of playlistInfo.items) {
-      try {
-        const provider = ProviderRegistry.getProviderForUrl(item.url);
-        const info = await provider.analyze(item.url);
-        if (info.formats && info.formats.length > 0) {
-          DownloadEngine.addDownload(info, info.formats[0], formatOptions);
+    // Pool de 3 probes concorrentes (sequencial levava N×~5-10s no armv7);
+    // cancelável pelo botão. `next` é seguro: JS é single-thread e o
+    // incremento ocorre de forma síncrona entre awaits.
+    enqueueCancelRef.current = false;
+    const items = playlistInfo.items;
+    setEnqueueProgress({ done: 0, total: items.length });
+    let next = 0;
+    const worker = async () => {
+      for (;;) {
+        if (enqueueCancelRef.current) return;
+        const i = next++;
+        if (i >= items.length) return;
+        const item = items[i];
+        try {
+          const provider = ProviderRegistry.getProviderForUrl(item.url);
+          const info = await provider.analyze(item.url);
+          if (!enqueueCancelRef.current && info.formats && info.formats.length > 0) {
+            DownloadEngine.addDownload(info, info.formats[0], formatOptions);
+          }
+        } catch (err) {
+          console.warn(`Failed to probe playlist item: ${item.title}`, err);
         }
-      } catch (err) {
-        console.warn(`Failed to probe playlist item: ${item.title}`, err);
+        setEnqueueProgress((p) => (p ? { done: p.done + 1, total: p.total } : p));
       }
-    }
+    };
+    await Promise.all([worker(), worker(), worker()]);
 
+    const cancelled = enqueueCancelRef.current;
+    setEnqueueProgress(null);
+    if (cancelled) return;
     setSuccessMsg(settings.language === 'en'
       ? `Added ${playlistInfo.items.length} items to queue`
       : `${playlistInfo.items.length} itens adicionados a fila`);
@@ -899,7 +926,28 @@ export const LinkAnalyzer: React.FC = () => {
               </button>
             )}
 
-            {/* Download All Button */}
+            {/* Download All Button (com progresso + cancelar durante o pool) */}
+            {enqueueProgress ? (
+              <div className="space-y-2">
+                <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-current opacity-80"
+                    style={{ width: `${Math.round((enqueueProgress.done / Math.max(1, enqueueProgress.total)) * 100)}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs lf-text-secondary">
+                    {enqueueProgress.done}/{enqueueProgress.total}
+                  </span>
+                  <button
+                    onClick={() => { enqueueCancelRef.current = true; }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold lf-surface-raised border lf-border lf-text-secondary hover:text-white transition-all"
+                  >
+                    {settings.language === 'en' ? 'Cancel' : 'Cancelar'}
+                  </button>
+                </div>
+              </div>
+            ) : (
             <button
               onClick={handleDownloadAllPlaylist}
               className={`w-full py-2.5 rounded-xl font-display font-bold text-sm transition-all ${getAccentBgClass(settings)} hover:opacity-90 text-white shadow-lg`}
@@ -909,6 +957,7 @@ export const LinkAnalyzer: React.FC = () => {
                 {settings.language === 'en' ? `Download All (${playlistInfo.items.length})` : `Baixar Todos (${playlistInfo.items.length})`}
               </span>
             </button>
+            )}
           </AnimatedCard>
         )}
       </AnimatedList>
