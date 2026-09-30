@@ -583,6 +583,21 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
     // retry e visibilidade nativos) e, ao concluir, abre o instalador.
     // Sem Play Store não há updater embarcado: este é o canal de update.
 
+    // ABI do aparelho no vocabulário dos assets da release
+    // (LinkFetcher-<abi>.apk): arm64, armv7, x86_64, x86.
+    @Command
+    fun appAbi(invoke: Invoke) {
+        val raw = android.os.Build.SUPPORTED_ABIS?.firstOrNull() ?: ""
+        val abi = when {
+            raw.startsWith("arm64") -> "arm64"
+            raw.startsWith("armeabi") || raw.startsWith("armv7") -> "armv7"
+            raw.startsWith("x86_64") -> "x86_64"
+            raw.startsWith("x86") -> "x86"
+            else -> ""
+        }
+        invoke.resolve(JSObject().apply { put("abi", abi) })
+    }
+
     @Command
     fun updateDownload(invoke: Invoke) {
         val args = invoke.parseArgs(UpdateDownloadArgs::class.java)

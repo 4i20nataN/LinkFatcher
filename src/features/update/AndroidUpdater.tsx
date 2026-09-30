@@ -38,6 +38,7 @@ export function AndroidUpdater() {
   const [stage, setStage] = useState<Stage>('idle');
   const [remote, setRemote] = useState('');
   const [apkUrl, setApkUrl] = useState('');
+  const [apkName, setApkName] = useState('LinkFetcher.apk');
   const [error, setError] = useState('');
 
   const check = useCallback(async () => {
@@ -50,9 +51,19 @@ export function AndroidUpdater() {
       if (!res.ok) throw new Error(`GitHub HTTP ${res.status}`);
       const rel = await res.json();
       const tag: string = rel.tag_name || '';
-      const apk = (rel.assets || []).find(
-        (a: any) => typeof a?.name === 'string' && a.name === 'LinkFetcher.apk'
-      );
+      const assets: any[] = rel.assets || [];
+      // APK da ABI do aparelho (leve); fallback: universal (completo).
+      let name = 'LinkFetcher.apk';
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const { abi } = await invoke<{ abi: string }>('plugin:ytdlp|appAbi');
+        const perAbi = abi ? `LinkFetcher-${abi}.apk` : '';
+        if (perAbi && assets.some(a => a?.name === perAbi)) name = perAbi;
+      } catch {
+        // sem ABI (ou comando indisponível): universal
+      }
+      setApkName(name);
+      const apk = assets.find((a: any) => typeof a?.name === 'string' && a.name === name);
       if (!tag || !apk?.browser_download_url) {
         throw new Error(en ? 'No Android APK in latest release' : 'Release atual sem APK Android');
       }
@@ -71,12 +82,12 @@ export function AndroidUpdater() {
   }, [en]);
 
   const download = useCallback(async () => {
-    if (!apkUrl || !remote) return;
+    if (!apkUrl) return;
     setStage('downloading');
     setError('');
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const fileName = 'LinkFetcher.apk';
+      const fileName = apkName;
       await invoke('plugin:ytdlp|updateDownload', { url: apkUrl, fileName });
       // O DownloadManager do sistema assume daqui (notificação + instalador).
     } catch (e: any) {
@@ -84,7 +95,7 @@ export function AndroidUpdater() {
       setError(msg || (en ? 'Download failed' : 'Falha no download'));
       setStage('error');
     }
-  }, [apkUrl, remote, en]);
+  }, [apkUrl, apkName, en]);
 
   const statusText =
     stage === 'checking'
