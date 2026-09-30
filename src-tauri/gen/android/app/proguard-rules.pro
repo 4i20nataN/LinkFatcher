@@ -44,3 +44,10 @@
 # Jackson databind: reflexão pesada em modelos (também renomeado no release).
 -keep class com.fasterxml.jackson.** { *; }
 -dontwarn com.fasterxml.jackson.**
+# Chaquopy (runtime Python do youtubedl-android): classes carregadas por
+# reflexão no init — rename quebra o boot release como em commons-compress.
+-keep class com.chaquo.python.** { *; }
+-dontwarn com.chaquo.python.**
+# WebView AndroidX do Tauri: callbacks via reflexão/JS bridge.
+-keep class androidx.webkit.** { *; }
+-dontwarn androidx.webkit.**

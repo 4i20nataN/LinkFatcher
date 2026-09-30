@@ -83,7 +83,6 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         java.util.concurrent.LinkedBlockingQueue()
     )
     private val lastPaths = ConcurrentHashMap<String, String>()
-    private var webView: WebView? = null
     // Self-update do yt-dlp respeita o toggle da UI (default ligado).
     // Ajustado via comando `setUpdatesEnabled` no boot e ao trocar.
     @Volatile
@@ -93,7 +92,6 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
 
     override fun load(webView: WebView) {
         super.load(webView)
-        this.webView = webView
         // Pre-warm em background: a 1ª init extrai o env Python dos assets
         // (segundos em aparelho fraco). Sem isso, a 1ª análise pagava esse
         // custo dentro do probe, parecendo "lentidão ao analisar".
@@ -155,17 +153,15 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    // Transporte único de progresso: `trigger()` (evento Tauri, ouvido pelo
+    // `listen` do frontend nas duas plataformas). O 2º transporte via
+    // `evaluateJavascript(CustomEvent)` foi removido: dobrava o IPC por tick
+    // de progresso sem nenhum consumidor exclusivo.
     private fun emitOnUi(event: String, build: JSObject.() -> Unit) {
         val data = JSObject()
         data.build()
-        val jsonStr = data.toString()
         activity.runOnUiThread {
             trigger(event, data)
-            webView?.let { wv ->
-                val escapedJson = JSONObject.quote(jsonStr)
-                val js = "(function(){ try { var d = JSON.parse($escapedJson); window.dispatchEvent(new CustomEvent('$event', { detail: d })); if (typeof window.__onLinkFetcherProgress === 'function') { window.__onLinkFetcherProgress(d); } } catch(e){} })();"
-                wv.evaluateJavascript(js, null)
-            }
         }
     }
 
@@ -201,7 +197,13 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                     return@cmd
                 }
                 try {
-                    invoke.resolve(JSObject(response.out))
+                    val obj = JSObject(response.out)
+                    // H1: a lista `thumbnails` (N resoluções do mesmo frame)
+                    // nunca é consumida — só `thumbnail` (string). Remove p/
+                    // enxugar o IPC no armv7. Desktop mantém o dump cheio; o
+                    // frontend tolera a ausência (fallbacks em Providers.ts).
+                    obj.remove("thumbnails")
+                    invoke.resolve(obj)
                 } catch (e: Exception) {
                     invoke.reject("probe: JSON inválido: ${e.message}")
                 }
@@ -385,11 +387,11 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 }
                 val finalPath = seen.asReversed().firstOrNull { File(it).exists() }
                     ?: newestFile(lastPaths[args.processId])
-                    // Último recurso: o arquivo pode pousar no disco depois das
-                    // linhas de callback (conversão ffmpeg lenta em aparelho
-                    // fraco). Deriva a pasta do `-o` do argv e aguarda até 12s
-                    // por um arquivo novo não-temporário.
-                    ?: waitForRecentFile(outputDirFromArgv(args.argv), startMs, 12_000)
+                    // Último recurso (só quando nada foi visto): o arquivo pode
+                    // pousar no disco depois das callbacks (conversão ffmpeg
+                    // lenta em aparelho fraco). Poll curto (5s): cada segundo
+                    // aqui é uma thread do pool bloqueada.
+                    ?: waitForRecentFile(outputDirFromArgv(args.argv), startMs, 5_000)
                 lastPaths.remove(args.processId)
                 if (finalPath == null) {
                     // Diagnóstico: destinos vistos + conteúdo da pasta + cauda
@@ -656,6 +658,20 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve(JSObject().apply { put("abi", abi) })
     }
 
+    // Versão do extrator embarcado p/ diagnóstico na UI (bitrot A1: se a
+    // extração quebrar, o usuário informa a versão sem logcat).
+    @Command
+    fun engineVersion(invoke: Invoke) {
+        try {
+            val v = try {
+                YoutubeDL.getInstance().version(activity.applicationContext) ?: ""
+            } catch (_: Exception) { "" }
+            invoke.resolve(JSObject().apply { put("version", v) })
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "sem versão")
+        }
+    }
+
     @Command
     fun updateDownload(invoke: Invoke) {
         val args = invoke.parseArgs(UpdateDownloadArgs::class.java)
@@ -730,6 +746,25 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     // ---- arquivos ----
+
+    // Jail: `openFile`/`publishFile` só operam dentro dos diretórios privados
+    // do app (canonical, sem `..`/symlink escape). Path fora → reject, nunca
+    // intent nem cópia pública. Nulo = fora da jail.
+    private fun jailedAppFile(raw: String): File? {
+        val canon = try {
+            File(raw.trim().trim('\'', '"')).canonicalPath
+        } catch (_: Exception) {
+            return null
+        }
+        val roots = listOfNotNull(
+            try { activity.getExternalFilesDir(null)?.canonicalPath } catch (_: Exception) { null },
+            try { activity.filesDir?.canonicalPath } catch (_: Exception) { null },
+            try { activity.cacheDir?.canonicalPath } catch (_: Exception) { null },
+            try { activity.externalCacheDir?.canonicalPath } catch (_: Exception) { null },
+        )
+        if (roots.none { canon == it || canon.startsWith("$it/") }) return null
+        return File(canon)
+    }
 
     // Copia o arquivo final (pasta privada do app, invisível ao usuário) para
     // a coleção pública de Downloads, onde aparece no app Files, gerenciadores
@@ -822,7 +857,12 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
     fun publishFile(invoke: Invoke) {
         try {
             val args = invoke.parseArgs(OpenArgs::class.java)
-            val file = File(args.path.trim().trim('\'', '"'))
+            val file = jailedAppFile(args.path)
+            if (file == null) {
+                Log.e(TAG, "publishFile: fora da pasta do app: ${args.path}")
+                invoke.reject("arquivo fora da pasta do app")
+                return
+            }
             if (!file.exists() || !file.isFile) {
                 invoke.reject("arquivo não encontrado")
                 return
@@ -843,7 +883,12 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun openFile(invoke: Invoke) {
         val args = invoke.parseArgs(OpenArgs::class.java)
-        val file = File(args.path.trim().trim('\'', '"'))
+        val file = jailedAppFile(args.path)
+        if (file == null) {
+            Log.e(TAG, "openFile: fora da pasta do app: ${args.path}")
+            invoke.reject("arquivo fora da pasta do app")
+            return
+        }
         if (!file.exists()) {
             Log.e(TAG, "openFile: não existe: ${args.path}")
             invoke.reject("arquivo não encontrado")

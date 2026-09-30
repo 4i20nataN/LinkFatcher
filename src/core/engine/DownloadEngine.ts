@@ -494,8 +494,7 @@ class DownloadEngineClass {
             finish();
             return;
           }
-          // Dedupe de transporte duplo (Tauri listen + CustomEvent no
-          // Android): segundo `complete` do mesmo ciclo é no-op, sem
+          // Dedupe defensivo: `complete` repetido do mesmo ciclo é no-op, sem
           // re-render nem persistência.
           if (item.status === 'completed') {
             finish();
@@ -535,27 +534,17 @@ class DownloadEngineClass {
         }
       };
 
-      // Listen for yt-dlp-progress events (desktop Tauri)
+      // Listen for yt-dlp-progress events (transporte único: o Kotlin emite
+      // só via `trigger()`; desktop e Android ouvem pelo mesmo `listen`).
       const unlisten = await listen('yt-dlp-progress', (event) => {
         handleProgressData(event.payload);
       });
-
-      // Listen for yt-dlp-progress CustomEvents (Android WebView)
-      const onCustomProgress = (e: Event) => {
-        handleProgressData((e as CustomEvent).detail);
-      };
-      if (typeof window !== 'undefined') {
-        window.addEventListener('yt-dlp-progress', onCustomProgress);
-      }
 
       let settled = false;
       const finish = () => {
         if (settled) return;
         settled = true;
         try { unlisten(); } catch { /* unlisten idempotente */ }
-        if (typeof window !== 'undefined') {
-          window.removeEventListener('yt-dlp-progress', onCustomProgress);
-        }
       };
 
       // Store unlisten and kill hook for cancel/pause. O status já foi

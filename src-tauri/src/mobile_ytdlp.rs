@@ -58,10 +58,22 @@ mod inner {
         success: bool,
     }
 
+    #[derive(serde::Deserialize)]
+    struct VersionResult {
+        #[serde(default)]
+        version: String,
+    }
+
     /// Pasta de downloads do app (Kotlin `getDownloadsDir`).
     pub async fn downloads_dir<R: Runtime>(app: &AppHandle<R>) -> Result<std::path::PathBuf, String> {
         let r: DirResult = call_mobile(app, "getDownloadsDir", &serde_json::json!({})).await?;
         Ok(std::path::PathBuf::from(r.dir))
+    }
+
+    /// Versão do yt-dlp embarcado (diagnóstico de bitrot na UI).
+    pub async fn engine_version<R: Runtime>(app: &AppHandle<R>) -> Result<String, String> {
+        let r: VersionResult = call_mobile(app, "engineVersion", &serde_json::json!({})).await?;
+        Ok(r.version)
     }
 
     /// Mata o processo no yt-dlp embarcado; `true` = havia processo ativo.
@@ -81,4 +93,4 @@ mod inner {
 }
 
 #[cfg(target_os = "android")]
-pub use inner::{call_mobile, cancel_mobile, downloads_dir, init};
+pub use inner::{call_mobile, cancel_mobile, downloads_dir, engine_version, init};

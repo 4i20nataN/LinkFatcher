@@ -317,14 +317,51 @@ fn url_path_ext(url: &str) -> Option<String> {
     }
 }
 
-/// `fs_fetch_cover` — baixa os bytes da imagem de capa via HTTP direto
+/// Host bloqueado para capa (S3): a URL vem do probe (conteúdo de
+/// terceiros) — nunca buscar metadata/link-local/IP literal, mesmo que o
+/// backend não encaminhe a resposta a ninguém.
+fn cover_host_blocked(url: &str) -> bool {
+    let Some(after_scheme) = url.split("://").nth(1) else {
+        return true;
+    };
+    let authority = after_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("");
+    let host = authority.rsplit('@').next().unwrap_or("");
+    if host.starts_with('[') {
+        return true; // IPv6 literal
+    }
+    let bare = host.split(':').next().unwrap_or("").trim_end_matches('.');
+    let lower = bare.to_lowercase();
+    if lower.is_empty() || lower == "localhost" || lower.starts_with("localhost.") {
+        return true;
+    }
+    // IPv4 literal: 4 grupos decimais.
+    let parts: Vec<&str> = lower.split('.').collect();
+    if parts.len() == 4
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.len() <= 3 && p.bytes().all(|b| b.is_ascii_digit()))
+    {
+        return true;
+    }
+    // Sobra de IPv6 sem colchetes ou hostname inválido.
+    if lower.contains(':') {
+        return true;
+    }
+    false
+}
+
+/// `fs_fetch_cover` — baixa os bytes da imagem de capa via HTTPS direto
 /// (sem CORS de canvas) e devolve em base64 + extensão real. O frontend
 /// converte (blob: URL = canvas limpo) e salva via plugin-fs. Teto 25 MB.
+/// Só `https://` e hosts públicos (S3: sem IP literal/localhost/metadata).
 #[tauri::command]
 pub async fn fs_fetch_cover(url: String) -> Result<serde_json::Value, String> {
     use base64::Engine as _;
     let url = url.trim().to_owned();
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
+    if !url.starts_with("https://") || cover_host_blocked(&url) {
         return Err("URL de capa inválida".into());
     }
     let client = reqwest::Client::builder()
@@ -699,12 +736,21 @@ pub async fn ytdlp_download(
         argv = strip_sub_flags(argv);
     }
     // Runtime JS do sistema (se houver): sem ele a extração moderna do
-    // YouTube degrada (formatos ausentes). Vai antes da URL posicional.
+    // YouTube degrada (formatos ausentes). Vai antes da URL posicional, mas
+    // depois do `--` (S11): o separador fica colado na URL.
     {
         let js = crate::ytdlp::binary::js_runtime_args();
         if !js.is_empty() {
             let url_arg = argv.pop();
+            let sep = if argv.last().is_some_and(|s| s == "--") {
+                argv.pop()
+            } else {
+                None
+            };
             argv.extend(js);
+            if let Some(s) = sep {
+                argv.push(s);
+            }
             if let Some(u) = url_arg {
                 argv.push(u);
             }
@@ -1661,6 +1707,24 @@ mod tests {
         let got = latest_downloaded_file(&dir).unwrap();
         assert!(got.ends_with("show.mp4"), "{got}");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn cover_host_blocklist() {
+        // Públicos passam.
+        assert!(!cover_host_blocked("https://i.ytimg.com/vi/x/hqdefault.jpg"));
+        assert!(!cover_host_blocked("https://cdn.example.com/a.png?w=100"));
+        // Metadata, localhost, IP literal e IPv6 nunca passam.
+        assert!(cover_host_blocked("http://169.254.169.254/latest/meta-data"));
+        assert!(cover_host_blocked("https://169.254.169.254/x.jpg"));
+        assert!(cover_host_blocked("http://127.0.0.1:8080/x.jpg"));
+        assert!(cover_host_blocked("https://localhost/x.jpg"));
+        assert!(cover_host_blocked("https://localhost./x.jpg"));
+        assert!(cover_host_blocked("https://[::1]/x.jpg"));
+        assert!(cover_host_blocked("https://user:pass@10.0.0.1/x.jpg"));
+        // Esquema barrado à parte (só https passa): host público não é block.
+        assert!(!cover_host_blocked("ftp://cdn.example.com/x.jpg"));
+        assert!(cover_host_blocked("not-a-url"));
     }
 
     #[test]

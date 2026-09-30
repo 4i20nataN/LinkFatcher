@@ -1,0 +1,46 @@
+name: 'Auditoria de dependências (npm + cargo)'
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+  schedule:
+    # Semanal: CVEs novos em pins antigos aparecem sem depender de release.
+    - cron: '0 6 * * 1'
+
+jobs:
+  npm:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      # Só prod embarca no bundle; dev (vite/tooling) reporta sem falhar.
+      - name: Audit prod (falha no high+)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit dev (informativo)
+        run: npm audit --audit-level=high || true
+
+  cargo:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Audit Rust (RustSec)
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

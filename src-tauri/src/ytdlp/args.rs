@@ -588,6 +588,9 @@ pub fn build_args(
         args.push(ff.to_string_lossy().into_owned());
     }
 
+    // Separador anti-flag: a URL posicional nunca pode ser lida como opção
+    // (S11). O desktop reinsere o `--` colado na URL após o js-runtime.
+    args.push("--".to_owned());
     args.push(params.url.clone());
     args
 }
@@ -633,6 +636,7 @@ mod tests {
                 "bestvideo+bestaudio/best",
                 "-o",
                 "/dl/%(title)s.%(ext)s",
+                "--",
                 "https://x/y",
             ]
         );
