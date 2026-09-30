@@ -161,11 +161,16 @@ jobs:
           retention-days: 90
 
       - name: Renomear artefato (1 APK por job da matrix)
-        # Cada job gera SÓ sua ABI em apk/<srcdir>/release/. Falha alto se
-        # faltar (melhor CI vermelho que release capenga).
         run: |
           APK_DIR=src-tauri/gen/android/app/build/outputs
-          cp "$APK_DIR/apk/${{ matrix.srcdir }}/release/${{ matrix.srcfile }}" "$APK_DIR/${{ matrix.file }}"
+          echo "=== TUDO que o build gerou:"
+          find "$APK_DIR" -type f \( -name "*.apk" -o -name "*.aab" \) | head -30
+          SRC="$APK_DIR/apk/${{ matrix.srcdir }}/release/${{ matrix.srcfile }}"
+          if [ ! -f "$SRC" ]; then
+            echo "ESPERADO MAS AUSENTE: $SRC"
+            exit 1
+          fi
+          cp "$SRC" "$APK_DIR/${{ matrix.file }}"
           ls -la "$APK_DIR/${{ matrix.file }}"
           if [ "${{ matrix.abi }}" = "universal" ]; then
             cp "$APK_DIR/bundle/universalRelease/app-universal-release.aab" "$APK_DIR/LinkFetcher.aab"
