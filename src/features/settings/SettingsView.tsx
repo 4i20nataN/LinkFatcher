@@ -14,6 +14,7 @@ import {
   getAccentBgClass, getAccentTextClass, getAccentBorderClass, getAccentRingClass
 } from '../../components/ThemeWrapper';
 import { Toggle } from '../../components/Toggle';
+import { AndroidUpdater } from '../update/AndroidUpdater';
 
 const accentColorsList = [
   { id: 'indigo', name: 'indigo', color: 'bg-indigo-500' },
@@ -459,10 +460,9 @@ export const SettingsView: React.FC = () => {
                 <Toggle value={settings.notifications} onChange={() => updateSettings({ notifications: !settings.notifications })} settings={settings} />
               </div>
 
-              {/* Auto-update: só desktop (plugin updater não registrado no
-                  Android — lá a atualização é pela loja/APK). Toggle inerte
-                  aqui seria placebo. */}
-              {!isAndroid && (
+              {/* Auto-update: desktop usa o updater Tauri; no Android (sem Play
+                  Store) o update é sideload via releases do GitHub. */}
+              {!isAndroid ? (
               <div className="flex items-center justify-between p-3 rounded-xl lf-surface-40 lf-border">
                 <div className="space-y-0.5">
                   <span className="text-xs font-semibold lf-text-secondary">{t('updatesLabel')}</span>
@@ -470,6 +470,8 @@ export const SettingsView: React.FC = () => {
                 </div>
                 <Toggle value={settings.updates} onChange={() => updateSettings({ updates: !settings.updates })} settings={settings} />
               </div>
+              ) : (
+                <AndroidUpdater />
               )}
             </div>
           </div>

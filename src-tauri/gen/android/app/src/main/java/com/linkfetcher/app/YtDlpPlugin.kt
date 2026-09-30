@@ -62,12 +62,20 @@ class OpenArgs {
     var path: String = ""
 }
 
+@InvokeArg
+class UpdateDownloadArgs {
+    var url: String = ""
+    var fileName: String = ""
+}
+
 @TauriPlugin
 class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
 
     private val executor = Executors.newCachedThreadPool()
     private val lastPaths = ConcurrentHashMap<String, String>()
     private var webView: WebView? = null
+    // Downloads de APK em andamento (id do DownloadManager → nome do arquivo).
+    private val pendingUpdates = ConcurrentHashMap<Long, String>()
 
     override fun load(webView: WebView) {
         super.load(webView)
@@ -79,6 +87,30 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val t0 = System.currentTimeMillis()
             ensureInitialized()
             Log.i(TAG, "pre-warm yt-dlp em ${System.currentTimeMillis() - t0}ms")
+        }
+        // Conclusão de download do APK de update → abre o instalador.
+        // RECEIVER_NOT_EXPORTED (API 33+); ContextCompat resolve no minSdk 24.
+        try {
+            val filter = android.content.IntentFilter(
+                android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE
+            )
+            val receiver = object : android.content.BroadcastReceiver() {
+                override fun onReceive(
+                    context: android.content.Context?,
+                    intent: android.content.Intent?
+                ) {
+                    val id = intent?.getLongExtra(
+                        android.app.DownloadManager.EXTRA_DOWNLOAD_ID, -1
+                    ) ?: return
+                    onUpdateDownloaded(id)
+                }
+            }
+            androidx.core.content.ContextCompat.registerReceiver(
+                activity, receiver, filter,
+                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "receiver de update não registrado: ${e.message}")
         }
     }
 
@@ -544,6 +576,80 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun cancelDlNotification(processId: String) {
         try { notificationManager()?.cancel(dlNotifyId(processId)) } catch (_: Exception) { }
+    }
+
+    // ---- auto-update sideload (sem Play Store) ----
+    // Baixa o APK da release via DownloadManager do sistema (notificação,
+    // retry e visibilidade nativos) e, ao concluir, abre o instalador.
+    // Sem Play Store não há updater embarcado: este é o canal de update.
+
+    @Command
+    fun updateDownload(invoke: Invoke) {
+        val args = invoke.parseArgs(UpdateDownloadArgs::class.java)
+        val fileName = args.fileName.substringAfterLast('/').trim()
+        if (args.url.isBlank() || fileName.isBlank() || !fileName.endsWith(".apk")) {
+            invoke.reject("URL ou nome de APK inválidos")
+            return
+        }
+        try {
+            val dm = activity.getSystemService(android.app.DownloadManager::class.java)
+                ?: return invoke.reject("DownloadManager indisponível")
+            val req = android.app.DownloadManager.Request(android.net.Uri.parse(args.url))
+                .setTitle("LinkFetcher $fileName")
+                .setDescription("Baixando atualização…")
+                .setNotificationVisibility(
+                    android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                )
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "LinkFetcher/$fileName")
+                .setMimeType("application/vnd.android.package-archive")
+                .setAllowedOverRoaming(false)
+            val id = dm.enqueue(req)
+            pendingUpdates[id] = fileName
+            Log.i(TAG, "update download enfileirado: $fileName (id=$id)")
+            invoke.resolve(JSObject().apply { put("downloadId", id) })
+        } catch (e: Exception) {
+            Log.e(TAG, "updateDownload falhou", e)
+            invoke.reject(e.message ?: "Falha ao baixar atualização")
+        }
+    }
+
+    private fun onUpdateDownloaded(id: Long) {
+        val fileName = pendingUpdates.remove(id) ?: return
+        try {
+            val dm = activity.getSystemService(android.app.DownloadManager::class.java)
+                ?: return
+            val q = android.app.DownloadManager.Query().setFilterById(id)
+            dm.query(q)?.use { c ->
+                if (!c.moveToFirst()) return
+                val status = c.getInt(
+                    c.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_STATUS)
+                )
+                if (status != android.app.DownloadManager.STATUS_SUCCESSFUL) {
+                    Log.w(TAG, "update download malsucedido: $fileName status=$status")
+                    return
+                }
+            }
+            val file = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "LinkFetcher/$fileName"
+            )
+            if (!file.exists()) {
+                Log.w(TAG, "update APK não encontrado: ${file.absolutePath}")
+                return
+            }
+            val uri = FileProvider.getUriForFile(
+                activity, "${activity.packageName}.fileprovider", file
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            activity.startActivity(intent)
+            Log.i(TAG, "instalador aberto: $fileName")
+        } catch (e: Exception) {
+            Log.e(TAG, "instalação do update falhou: $fileName", e)
+        }
     }
 
     // ---- arquivos ----
