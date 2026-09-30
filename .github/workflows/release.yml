@@ -59,38 +59,7 @@ jobs:
   android:
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - abi: universal
-            filter: "arm64-v8a,armeabi-v7a,x86,x86_64"
-            srcdir: universal
-            srcfile: app-universal-release.apk
-            file: LinkFetcher.apk
-          - abi: arm64
-            filter: "arm64-v8a"
-            srcdir: arm64
-            srcfile: app-arm64-release.apk
-            file: LinkFetcher-arm64.apk
-          - abi: armv7
-            filter: "armeabi-v7a"
-            srcdir: arm
-            srcfile: app-arm-release.apk
-            file: LinkFetcher-armv7.apk
-          - abi: x86_64
-            filter: "x86_64"
-            srcdir: x86_64
-            srcfile: app-x86_64-release.apk
-            file: LinkFetcher-x86_64.apk
-          - abi: x86
-            filter: "x86"
-            srcdir: x86
-            srcfile: app-x86-release.apk
-            file: LinkFetcher-x86.apk
     runs-on: 'ubuntu-22.04'
-    env:
-      LINKFETCHER_ABIS: ${{ matrix.filter }}
     steps:
       - name: Checkout do Repositório
         uses: actions/checkout@v4
@@ -147,25 +116,29 @@ jobs:
           EOF
 
       - name: Build release Android (APK + AAB assinados)
-        # Matrix por ABI via LINKFETCHER_ABIS: cada job gera um universal
-        # enxuto (1 ABI). NÃO rodar gradle avulso: rustBuild fora da
-        # orquestração do Tauri panica (WebSocket indisponível).
+        # Job único, universal completo. Sem matrix/splits: o splitter do AGP
+        # conflita com o empacotamento legado de .so do Tauri (package*Release
+        # quebra) e, mesmo empacotando, o split sai com o mesmo peso.
+        # NÃO rodar gradle avulso: rustBuild fora da orquestração panica.
         run: npx tauri android build
 
       - name: Arquivar mapping R8 (deobfuscar crashes futuros)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: android-mapping-${{ matrix.abi }}-${{ github.ref_name }}
+          name: android-mapping-${{ github.ref_name }}
           path: src-tauri/gen/android/app/build/outputs/mapping/
           retention-days: 90
 
-      - name: Renomear artefato (1 APK por job da matrix)
-        # Cada job gera SÓ sua ABI em apk/<srcdir>/release/. Falha alto se
-        # faltar (melhor CI vermelho que release capenga).
+      - name: Renomear artefatos (universal + AAB)
         run: |
           APK_DIR=src-tauri/gen/android/app/build/outputs
-          cp "$APK_DIR/apk/${{ matrix.srcdir }}/release/${{ matrix.srcfile }}" "$APK_DIR/${{ matrix.file }}"
+          echo "=== APKs/AABs gerados:"
+          find "$APK_DIR" -type f \( -name "*.apk" -o -name "*.aab" \) | head -20
+          cp "$APK_DIR/apk/universal/release/app-universal-release.apk" "$APK_DIR/LinkFetcher.apk"
+          cp "$APK_DIR/bundle/universalRelease/app-universal-release.aab" "$APK_DIR/LinkFetcher.aab"
+          ls -la "$APK_DIR/LinkFetcher.apk" "$APK_DIR/LinkFetcher.aab"
+          cp "$SRC" "$APK_DIR/${{ matrix.file }}"
           ls -la "$APK_DIR/${{ matrix.file }}"
           if [ "${{ matrix.abi }}" = "universal" ]; then
             cp "$APK_DIR/bundle/universalRelease/app-universal-release.aab" "$APK_DIR/LinkFetcher.aab"
@@ -188,9 +161,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           APK_DIR=src-tauri/gen/android/app/build/outputs
-          FILES="$APK_DIR/${{ matrix.file }}"
-          if [ "${{ matrix.abi }}" = "universal" ]; then
-            FILES="$FILES $APK_DIR/LinkFetcher.aab"
-          fi
-          # shellcheck disable=SC2086
-          gh release upload "${GITHUB_REF_NAME}" $FILES --clobber
+          gh release upload "${GITHUB_REF_NAME}" \
+            "$APK_DIR/LinkFetcher.apk" \
+            "$APK_DIR/LinkFetcher.aab" \
+            --clobber
