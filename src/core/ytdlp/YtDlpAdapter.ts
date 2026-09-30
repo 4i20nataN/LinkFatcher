@@ -91,7 +91,8 @@ export const YtDlpAdapter = {
 // do Android cada probe custa segundos em aparelho fraco. TTL curto: o
 // catálogo muda, mas não em minutos.
 const PROBE_CACHE_TTL_MS = 10 * 60 * 1000;
-const PROBE_CACHE_MAX = 20;
+// Teto de RAM: cada dump-json tem ~1MB; 10 entradas ≈ 10MB no pior caso.
+const PROBE_CACHE_MAX = 10;
 const probeCache = new Map<string, { at: number; data: any }>();
 
 function probeCacheKey(options: ProbeOptions): string {
@@ -143,9 +144,9 @@ export async function searchVideosWithAdapter(options: SearchOptions): Promise<S
   throw new Error('No transport available (requires app)');
 }
 
-export async function getYtDlpStatusWithAdapter(): Promise<{ ready: boolean; binaryPath?: string }> {
+export async function getYtDlpStatusWithAdapter(): Promise<{ ready: boolean; binaryPath?: string; version?: string }> {
   if (isTauri()) {
-    return callTauri<{ ready: boolean; binaryPath?: string }>('ytdlp_status');
+    return callTauri<{ ready: boolean; binaryPath?: string; version?: string }>('ytdlp_status');
   }
   // Electron: use IPC bridge
   if (isElectron()) {

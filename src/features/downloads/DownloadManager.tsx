@@ -167,7 +167,12 @@ export const DownloadManager: React.FC = () => {
   };
 
   const handleOpenFolder = async (item: DownloadItem) => {
-    if (!window.electron?.invoke) return;
+    // No Tauri (desktop + Android) `window.electron` é o shim p/ `fs_open_path`
+    // (Kotlin `openFile` no mobile). Sem ele, avisa em vez de no-op mudo.
+    if (!window.electron?.invoke) {
+      showToast(settings.language === 'en' ? 'Open not available in this environment.' : 'Abertura indisponível neste ambiente.');
+      return;
+    }
     const target = item.filePath || settings.defaultDir || await window.electron.invoke('shell:getDownloadsPath');
     if (target) {
       window.electron.invoke('shell:openPath', target).catch((err: any) => {
@@ -760,6 +765,11 @@ export const DownloadManager: React.FC = () => {
                       const arg = args[i];
                       if (i === args.length - 1) {
                         lines.push(`  "${arg}"`);
+                      } else if (arg === '--') {
+                        // Separador anti-flag (S11): última linha, sem `\`.
+                        const next = args[i + 1];
+                        lines.push(next ? `  -- "${next}"` : `  --`);
+                        i++;
                       } else if (arg.startsWith('-')) {
                         const next = args[i + 1];
                         if (next && !next.startsWith('-')) {
