@@ -1,7 +1,7 @@
 {
   "name": "linkfetcher",
   "private": true,
-  "version": "1.2.2",
+  "version": "1.3.0",
   "description": "LinkFetcher-Tauri - desktop yt-dlp frontend (Tauri v2)",
   "author": {
     "name": "Natan Vanim",
