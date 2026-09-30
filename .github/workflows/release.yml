@@ -116,6 +116,9 @@ jobs:
           EOF
 
       - name: Build release Android (APK + AAB assinados)
+        # O assembleRelease do Tauri já empacota os splits por ABI (provado
+        # via dry-run do grafo). NÃO rodar gradle avulso: rustBuild fora da
+        # orquestração do Tauri panica (WebSocket indisponível).
         run: npx tauri android build
 
       - name: Arquivar mapping R8 (deobfuscar crashes futuros)
@@ -125,13 +128,6 @@ jobs:
           name: android-mapping-${{ github.ref_name }}
           path: src-tauri/gen/android/app/build/outputs/mapping/
           retention-days: 90
-
-      - name: Empacotar splits por ABI
-        # O `tauri android build` garante o universal; os splits vêm daqui
-        # (incremental: Rust/Kotlin já compilados, só empacota).
-        run: |
-          cd src-tauri/gen/android
-          ./gradlew assembleArmRelease assembleArm64Release assembleX86Release assembleX86_64Release
 
       - name: Renomear artefatos
         run: |
