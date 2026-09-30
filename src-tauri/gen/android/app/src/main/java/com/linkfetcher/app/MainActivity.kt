@@ -23,11 +23,15 @@ class MainActivity : TauriActivity() {
         try {
           val status = YoutubeDL.getInstance().updateYoutubeDL(appContext, UpdateChannel.STABLE)
           Log.i("LinkFetcher", "yt-dlp update: $status (${YoutubeDL.getInstance().version(appContext)})")
-        } catch (e: Exception) {
-          Log.w("LinkFetcher", "yt-dlp update falhou (mantendo embarcado)", e)
+        } catch (t: Throwable) {
+          // Throwable: no 1º boot o update troca o env em uso e pode derrubar
+          // o processo (observado uma vez); nunca pode matar o app.
+          Log.w("LinkFetcher", "yt-dlp update falhou (mantendo embarcado)", t)
         }
       }
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
+      // Throwable (não Exception): falha de init do Python vem como Error
+      // (ExceptionInInitializerError) — sem isso o boot release morre.
       Log.e("LinkFetcher", "Falha ao inicializar YoutubeDL/FFmpeg", e)
     }
   }

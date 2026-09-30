@@ -35,3 +35,12 @@
 -keep class io.github.junkfood02.youtubedl_android.** { *; }
 -dontwarn com.yausername.youtubedl_android.**
 -dontwarn com.yausername.ffmpeg.**
+
+# Apache commons-compress: ExtraFieldUtils registra ZipExtraFields por
+# reflexão no <clinit> — rename quebra o init do Python embarcado no release
+# ("class U1.a is not a concrete class"; debug passa). Validado no mapping.
+-keep class org.apache.commons.compress.** { *; }
+-dontwarn org.apache.commons.compress.**
+# Jackson databind: reflexão pesada em modelos (também renomeado no release).
+-keep class com.fasterxml.jackson.** { *; }
+-dontwarn com.fasterxml.jackson.**

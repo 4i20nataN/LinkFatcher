@@ -75,7 +75,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         // Pre-warm em background: a 1ª init extrai o env Python dos assets
         // (segundos em aparelho fraco). Sem isso, a 1ª análise pagava esse
         // custo dentro do probe, parecendo "lentidão ao analisar".
-        executor.execute {
+        executor.execute cmd@{
             val t0 = System.currentTimeMillis()
             ensureInitialized()
             Log.i(TAG, "pre-warm yt-dlp em ${System.currentTimeMillis() - t0}ms")
@@ -115,7 +115,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.reject("URL vazia")
             return
         }
-        executor.execute {
+        executor.execute cmd@{
             ensureInitialized()
             val t0 = System.currentTimeMillis()
             try {
@@ -135,7 +135,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 Log.i(TAG, "probe em ${System.currentTimeMillis() - t0}ms exit=${response.exitCode}")
                 if (response.exitCode != 0) {
                     invoke.reject(cleanError(response.err.ifBlank { response.out }))
-                    return@execute
+                    return@cmd
                 }
                 try {
                     invoke.resolve(JSObject(response.out))
@@ -158,7 +158,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.reject("URL vazia")
             return
         }
-        executor.execute {
+        executor.execute cmd@{
             ensureInitialized()
             try {
                 val request = YoutubeDLRequest(args.url)
@@ -175,7 +175,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 val response = YoutubeDL.getInstance().execute(request, "playlist-${System.nanoTime()}")
                 if (response.exitCode != 0 && response.out.isBlank()) {
                     invoke.reject(cleanError(response.err.ifBlank { response.out }))
-                    return@execute
+                    return@cmd
                 }
                 val entries = JSONArray()
                 var count: Long? = null
@@ -220,7 +220,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.reject("Busca vazia")
             return
         }
-        executor.execute {
+        executor.execute cmd@{
             ensureInitialized()
             try {
                 val max = args.maxResults ?: 10
@@ -237,7 +237,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 val response = YoutubeDL.getInstance().execute(request, "search-${System.nanoTime()}")
                 if (response.exitCode != 0 && response.out.isBlank()) {
                     invoke.reject(cleanError(response.err.ifBlank { response.out }))
-                    return@execute
+                    return@cmd
                 }
                 val results = JSONArray()
                 response.out.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { line ->
@@ -262,7 +262,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.reject("argv ou processId inválidos")
             return
         }
-        executor.execute {
+        executor.execute cmd@{
             ensureInitialized()
             val startMs = System.currentTimeMillis()
             var captured: String? = null
@@ -317,7 +317,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                     }
                     showDlError(args.processId, args.title, msg)
                     invoke.reject(msg)
-                    return@execute
+                    return@cmd
                 }
                 val finalPath = seen.asReversed().firstOrNull { File(it).exists() }
                     ?: newestFile(lastPaths[args.processId])
@@ -344,7 +344,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                         put("message", msg)
                     }
                     invoke.reject(msg)
-                    return@execute
+                    return@cmd
                 }
                 val size = File(finalPath).length()
                 Log.i(TAG, "execute ${args.processId} ok: $finalPath ($size)")

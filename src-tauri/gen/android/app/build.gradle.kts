@@ -32,6 +32,23 @@ android {
             useLegacyPackaging = true
         }
     }
+    signingConfigs {
+        // Release assinado via key.properties (gitignored, ver gen/android/.gitignore).
+        // Sem o arquivo, o release sai unsigned (não instala) — o build não quebra.
+        create("release") {
+            val keyProps = Properties()
+            // key.properties mora na raiz do projeto android (gen/android/),
+            // não em app/ — rootProject.file resolve o diretório certo.
+            val keyFile = rootProject.file("key.properties")
+            if (keyFile.exists()) {
+                keyFile.inputStream().use { keyProps.load(it) }
+                storeFile = file(keyProps.getProperty("storeFile"))
+                storePassword = keyProps.getProperty("storePassword")
+                keyAlias = keyProps.getProperty("keyAlias")
+                keyPassword = keyProps.getProperty("keyPassword")
+            }
+        }
+    }
     buildTypes {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
@@ -47,6 +64,7 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
