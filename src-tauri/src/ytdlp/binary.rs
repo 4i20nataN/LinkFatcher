@@ -75,6 +75,9 @@ pub struct BinStatus {
     pub missing: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binary_path: Option<String>,
+    /// Versão do extrator (diagnóstico de bitrot na UI; ausente = desconhecida).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 pub fn bin_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -179,11 +182,16 @@ pub fn js_runtime_args() -> Vec<String> {
 /// overlay `{ready}`, do reference `{ready, missing}` e do spec `{ready, binaryPath}`).
 #[cfg(target_os = "android")]
 #[tauri::command]
-pub async fn ytdlp_status(_app: AppHandle) -> Result<BinStatus, String> {
+pub async fn ytdlp_status(app: AppHandle) -> Result<BinStatus, String> {
+    let version = crate::mobile_ytdlp::engine_version(&app)
+        .await
+        .ok()
+        .filter(|v| !v.is_empty());
     Ok(BinStatus {
         ready: true,
         missing: Vec::new(),
         binary_path: Some("embedded:youtubedl-android".to_string()),
+        version,
     })
 }
 
@@ -203,10 +211,24 @@ pub async fn ytdlp_status(app: AppHandle) -> Result<BinStatus, String> {
     if !ffprobe.is_file() {
         missing.push("ffprobe".to_owned());
     }
+    // Versão p/ diagnóstico (best-effort: binário ausente/quebrado → None).
+    let version = if ytdlp.is_file() {
+        tokio::process::Command::new(&ytdlp)
+            .arg("--version")
+            .output()
+            .await
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+            .filter(|v| !v.is_empty())
+    } else {
+        None
+    };
     Ok(BinStatus {
         ready: missing.is_empty(),
         missing,
         binary_path: Some(ytdlp.to_string_lossy().into_owned()),
+        version,
     })
 }
 

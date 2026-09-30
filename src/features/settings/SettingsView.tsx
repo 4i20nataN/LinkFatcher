@@ -45,6 +45,8 @@ export const SettingsView: React.FC = () => {
   // usa a pasta própria no armazenamento externo (via `fs_get_downloads_path`).
   const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const [mobileDir, setMobileDir] = useState('');
+  // Versão do yt-dlp embarcado (diagnóstico de bitrot A1).
+  const [engineVersion, setEngineVersion] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAndroid) return;
@@ -54,6 +56,11 @@ export const SettingsView: React.FC = () => {
         const dir = await invoke<string>('fs_get_downloads_path');
         setMobileDir(dir);
       } catch { /* mantém fallback */ }
+      try {
+        const { getYtDlpStatusWithAdapter } = await import('../../core/ytdlp/YtDlpAdapter');
+        const s = await getYtDlpStatusWithAdapter();
+        if (s.version) setEngineVersion(s.version);
+      } catch { /* versão desconhecida: omite a linha */ }
     })();
   }, [isAndroid]);
 
@@ -408,8 +415,13 @@ export const SettingsView: React.FC = () => {
                     : (settings.language === 'en'
                       ? `Files are published to Downloads/${settings.mobilePublicSubdir ?? 'LinkFetcher'} (visible in Files and players). Clear the field to use Downloads root. Arbitrary paths are blocked by Android scoped storage.`
                       : `Arquivos publicados em Downloads/${settings.mobilePublicSubdir ?? 'LinkFetcher'} (visíveis em Arquivos e players). Apague o campo para usar a raiz de Downloads. Pasta arbitrária é bloqueada pelo scoped storage do Android.`)}
-                  </span>
-                </p>
+                    </span>
+                  </p>
+                  {engineVersion && (
+                    <p className="text-[10px] lf-text-faint font-mono">
+                      yt-dlp {engineVersion}
+                    </p>
+                  )}
                 </>
                 ) : (
                 <>
