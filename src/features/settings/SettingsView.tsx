@@ -86,7 +86,7 @@ export const SettingsView: React.FC = () => {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         const dir = mobileDir || await invoke<string>('fs_get_downloads_path');
-        await invoke('fs_open_path', { target_path: dir });
+          await invoke('fs_open_path', { targetPath: dir });
       } catch (err: any) {
         const detail = typeof err === 'string' ? err : err?.message;
         showToast((settings.language === 'en' ? 'Failed to open: ' : 'Falha ao abrir: ') + (detail || ''));
