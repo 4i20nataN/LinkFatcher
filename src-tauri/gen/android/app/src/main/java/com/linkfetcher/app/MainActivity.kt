@@ -4,16 +4,29 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.enableEdgeToEdge
 import com.yausername.youtubedl_android.YoutubeDL
+import com.yausername.youtubedl_android.YoutubeDL.UpdateChannel
 import com.yausername.ffmpeg.FFmpeg
+import java.util.concurrent.Executors
 
 class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     try {
-      YoutubeDL.getInstance().init(this)
-      FFmpeg.getInstance().init(this)
+      YoutubeDL.getInstance().init(applicationContext)
+      FFmpeg.getInstance().init(applicationContext)
       Log.i("LinkFetcher", "YoutubeDL e FFmpeg inicializados com sucesso no Android")
+      // yt-dlp embarcado envelhece rápido (quebra extração): atualiza em
+      // background, sem travar a UI; falha de rede só mantém o embarcado.
+      val appContext = applicationContext
+      Executors.newSingleThreadExecutor().execute {
+        try {
+          val status = YoutubeDL.getInstance().updateYoutubeDL(appContext, UpdateChannel.STABLE)
+          Log.i("LinkFetcher", "yt-dlp update: $status (${YoutubeDL.getInstance().version(appContext)})")
+        } catch (e: Exception) {
+          Log.w("LinkFetcher", "yt-dlp update falhou (mantendo embarcado)", e)
+        }
+      }
     } catch (e: Exception) {
       Log.e("LinkFetcher", "Falha ao inicializar YoutubeDL/FFmpeg", e)
     }

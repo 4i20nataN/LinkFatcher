@@ -2,16 +2,18 @@
 
 use tauri::AppHandle;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct SearchOptions {
     pub query: String,
     pub platform: String,
     #[serde(rename = "maxResults")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_results: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub proxy: Option<String>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct SearchResult {
     pub id: String,
     pub title: String,
@@ -68,6 +70,26 @@ fn build_query(platform: &str, query: &str, max: u32) -> String {
 }
 
 /// YtDlpSearch.ts:37-73 — mesmos args, mesmo NDJSON, mesmos 9 fallbacks.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn ytdlp_search(
+    app: AppHandle,
+    options: SearchOptions,
+) -> Result<Vec<SearchResult>, String> {
+    // O plugin Kotlin resolve um objeto `{results: [...]}` (o `invoke.resolve`
+    // só aceita `JSObject`): desserializa o envelope e devolve o vetor, que é
+    // o contrato do comando no desktop e o que o frontend espera.
+    #[derive(serde::Deserialize)]
+    struct SearchResponse {
+        #[serde(default)]
+        results: Vec<SearchResult>,
+    }
+    let res: SearchResponse = crate::mobile_ytdlp::call_mobile(&app, "search", &options).await?;
+    Ok(res.results)
+}
+
+/// YtDlpSearch.ts:37-73 — mesmos args, mesmo NDJSON, mesmos 9 fallbacks.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn ytdlp_search(
     app: AppHandle,

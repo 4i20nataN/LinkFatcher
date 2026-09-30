@@ -19,3 +19,19 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Tauri Mobile & Plugins
+-keep class com.linkfetcher.app.** { *; }
+-keep class app.tauri.** { *; }
+-keepattributes *Annotation*
+-keepclassmembers class * {
+    @app.tauri.annotation.Command *;
+    @app.tauri.annotation.InvokeArg *;
+}
+
+# youtubedl-android & ffmpeg
+-keep class com.yausername.youtubedl_android.** { *; }
+-keep class com.yausername.ffmpeg.** { *; }
+-keep class io.github.junkfood02.youtubedl_android.** { *; }
+-dontwarn com.yausername.youtubedl_android.**
+-dontwarn com.yausername.ffmpeg.**

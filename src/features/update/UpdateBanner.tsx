@@ -4,10 +4,10 @@ import { AnimatedList } from '../../animation/AnimatedList';
 import { AnimatedButton } from '../../animation/AnimatedButton';
 import { bannerEntry, scaleIn } from '../../animation/variants';
 import { Download, X, CheckCircle, AlertCircle, Loader2, ShieldCheck, Sparkles, RefreshCw, FileText, Clock } from 'lucide-react';
-import { check, Update } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
+import type { Update } from '@tauri-apps/plugin-updater';
 import { useApp } from '../../context/AppContext';
 import { useTranslation } from '../../core/i18n';
+import { isAndroid } from '../../core/ytdlp/YtDlpAdapter';
 
 declare const __APP_VERSION__: string;
 
@@ -43,8 +43,11 @@ export default function UpdateBanner() {
   // Verificação inicial ao carregar o aplicativo (com delay suave de 2.5s),
   // só se o toggle de auto-update estiver ativo. Opt-out: `false` explícito
   // desliga; ausente (perfil antigo) mantém verificando.
+  // No Android o plugin updater nem é registrado (só desktop): nem tenta.
+  // Import dinâmico: evita avaliar o binding nativo no boot mobile (warns).
   useEffect(() => {
     if (settings.updates === false) return;
+    if (isAndroid()) return;
     const timer = setTimeout(() => {
       checkForUpdates();
     }, 2500);
@@ -56,8 +59,9 @@ export default function UpdateBanner() {
     setStage('checking');
     setErrorMsg('');
 
-    // Tauri Desktop v2 Auto-updater
+    // Tauri Desktop v2 Auto-updater (import dinâmico: fora do boot mobile)
     try {
+      const { check } = await import('@tauri-apps/plugin-updater');
       const update = await check();
       if (update) {
         tauriUpdateRef.current = update;
@@ -118,6 +122,7 @@ export default function UpdateBanner() {
       // Relaunch imediato ou após 1 segundo para feedback visual limpo
       setTimeout(async () => {
         try {
+          const { relaunch } = await import('@tauri-apps/plugin-process');
           await relaunch();
         } catch {
           // Se falhar o relaunch automático, o botão "Reiniciar" permite acionar manualmente
@@ -132,6 +137,7 @@ export default function UpdateBanner() {
 
   const handleManualRelaunch = async () => {
     try {
+      const { relaunch } = await import('@tauri-apps/plugin-process');
       await relaunch();
     } catch {
       window.location.reload();

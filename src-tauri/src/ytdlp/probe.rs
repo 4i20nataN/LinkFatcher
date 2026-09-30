@@ -3,10 +3,22 @@
 use std::path::Path;
 use tauri::AppHandle;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct ProbeOptions {
     pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub proxy: Option<String>,
+}
+
+/// Probe no Android: encaminha ao yt-dlp embarcado (Kotlin). Retorna o
+/// dump-json completo, igual ao desktop.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn ytdlp_probe(
+    app: AppHandle,
+    options: ProbeOptions,
+) -> Result<serde_json::Value, String> {
+    crate::mobile_ytdlp::call_mobile(&app, "probe", &options).await
 }
 
 async fn run_capture(bin: &Path, args: &[String]) -> Result<Vec<u8>, String> {
@@ -29,13 +41,15 @@ fn common_auth(args: &mut Vec<String>, proxy: &Option<String>) {
 }
 
 /// probeUrl — YtDlpProbe.ts:27-42. Retorna o JSON bruto; Providers.ts parseia no renderer.
+/// `--no-playlist`: paridade com o Kotlin no Android (vídeo único, sem expandir playlist).
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn ytdlp_probe(
     app: AppHandle,
     options: ProbeOptions,
 ) -> Result<serde_json::Value, String> {
     let bin = super::binary::ytdlp_path(&app)?;
-    let mut args = vec!["--dump-json".into(), "--no-download".into()];
+    let mut args = vec!["--dump-json".into(), "--no-download".into(), "--no-playlist".into()];
     common_auth(&mut args, &options.proxy);
     args.extend(super::binary::js_runtime_args());
     args.push(options.url);
@@ -43,7 +57,7 @@ pub async fn ytdlp_probe(
     serde_json::from_slice(&stdout).map_err(|e| format!("probe: JSON inválido: {e}"))
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct PlaylistResult {
     pub entries: Vec<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -52,8 +66,19 @@ pub struct PlaylistResult {
     pub title: Option<String>,
 }
 
+/// probePlaylist no Android: NDJSON parseado no Kotlin, mesmo formato.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn ytdlp_probe_playlist(
+    app: AppHandle,
+    options: ProbeOptions,
+) -> Result<PlaylistResult, String> {
+    crate::mobile_ytdlp::call_mobile(&app, "probePlaylist", &options).await
+}
+
 /// probePlaylist — YtDlpProbe.ts:52-94, mesma regra NDJSON
 /// (linha playlist: `_type == "playlist"` ou tem `playlist_count`).
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn ytdlp_probe_playlist(
     app: AppHandle,

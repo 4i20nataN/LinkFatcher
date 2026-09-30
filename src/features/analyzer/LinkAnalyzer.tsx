@@ -23,7 +23,7 @@ import type { FormatOptions } from '../downloads/FormatOptions';
 import { AUDIO_QUALITY_PRESETS } from '../downloads/constants';
 const FormatSelector = React.lazy(() => import('../downloads/FormatSelector').then(m => ({ default: m.FormatSelector })));
 import { isPlaylistUrl } from '../../core/ytdlp/playlistUtils';
-import { probeUrlWithAdapter, adapterErrorMessage } from '../../core/ytdlp/YtDlpAdapter';
+import { adapterErrorMessage } from '../../core/ytdlp/YtDlpAdapter';
 import { PlatformBadge } from '../../components/PlatformBadge';
 
 const PLATFORM_ICONS: Record<string, LucideIcon> = {
@@ -159,7 +159,6 @@ export const LinkAnalyzer: React.FC = () => {
   
   const animationFrameRef = useRef<number | null>(null);
   const handleAnalyzeRef = useRef<(url: string) => void>(() => {});
-  const handleProbeRef = useRef<(url: string) => void>(() => {});
   const smoothSetPlaybackRate = (element: HTMLElement | null, targetRate: number) => {
     if (!element) return;
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
@@ -225,7 +224,6 @@ export const LinkAnalyzer: React.FC = () => {
       if (trimmed && /^https?:\/\/.+/i.test(trimmed)) {
         const clean = sanitizeUrl(trimmed);
         handleAnalyze(clean);
-        handleProbe(clean);
       }
     }
   }, [selectedUrl]);
@@ -240,7 +238,6 @@ export const LinkAnalyzer: React.FC = () => {
         if (trimmed && /^https?:\/\/.+/i.test(trimmed)) {
           const clean = sanitizeUrl(trimmed);
           handleAnalyzeRef.current(clean);
-          handleProbeRef.current(clean);
         }
       }
     };
@@ -329,23 +326,6 @@ export const LinkAnalyzer: React.FC = () => {
   };
   handleAnalyzeRef.current = handleAnalyze;
 
-  const handleProbe = async (probeUrl: string) => {
-    setProbeLoading(true);
-    setProbeError(null);
-
-    try {
-      const data = await probeUrlWithAdapter({ url: probeUrl });
-      if (data.error) {
-        throw new Error(data.error);
-      }
-    } catch (err: any) {
-      setProbeError(adapterErrorMessage(err, 'Probe failed'));
-    } finally {
-      setProbeLoading(false);
-    }
-  };
-  handleProbeRef.current = handleProbe;
-
   const handleSubmit = async () => {
     let trimmed = url.trim();
     if (!trimmed) return;
@@ -356,9 +336,8 @@ export const LinkAnalyzer: React.FC = () => {
     
     trimmed = sanitizeUrl(trimmed);
     setUrl(trimmed); // Atualiza o input visualmente com a URL limpa
-    
+
     await handleAnalyze(trimmed);
-    handleProbe(trimmed);
   };
 
   const handlePaste = async () => {
@@ -633,7 +612,7 @@ export const LinkAnalyzer: React.FC = () => {
     <div className="max-w-4xl mx-auto space-y-8 py-2 md:py-6 px-4">
       {/* Title Header */}
       <div className="text-center md:text-left space-y-2">
-        <h2 className="font-display font-extrabold text-3xl md:text-4xl text-white tracking-tight">
+        <h2 className="font-display font-extrabold text-2xl md:text-4xl text-white tracking-tight leading-tight break-words">
           {t('universalDownloader')}
         </h2>
         <p className="lf-text-secondary text-sm md:text-base">

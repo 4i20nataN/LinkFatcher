@@ -6,9 +6,12 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::SystemTime;
 use tokio::process::Child;
+#[cfg(not(target_os = "android"))]
 use tokio::io::AsyncReadExt;
 
-use tauri::{AppHandle, Manager, Emitter};
+use tauri::AppHandle;
+#[cfg(not(target_os = "android"))]
+use tauri::{Emitter, Manager};
 
 /// Maps download id → child process (kill on cancel).
 type CancelMap = std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<Child>>>;
@@ -77,14 +80,27 @@ pub fn init_cancel_map(_state: std::sync::Mutex<CancelMap>) {
 }
 
 /// Retorna o diretório de downloads do SO. Paridade `main.cjs:203`.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub fn fs_get_downloads_path(app: AppHandle) -> Result<String, String> {
     let p = app.path().download_dir().map_err(|e| format!("{:?}", e))?;
     Ok(p.to_string_lossy().into_owned())
 }
 
+/// No Android: pasta de downloads do app no armazenamento externo
+/// (`getExternalFilesDir(DOWNLOADS)` via Kotlin) — gravável sem permissão,
+/// visível em gerenciadores de arquivos. A pública (`/Download`) é
+/// bloqueada pelo scoped storage (EACCES via File API no SDK 30+).
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn fs_get_downloads_path(app: AppHandle) -> Result<String, String> {
+    let dir = crate::mobile_ytdlp::downloads_dir(&app).await?;
+    Ok(dir.to_string_lossy().into_owned())
+}
+
 /// `shell:openPath` — abre arquivo ou pasta no gerenciador de arquivos do SO.
 /// Paridade `main.cjs:205-230`.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn fs_open_path(_app: AppHandle, target_path: String) -> Result<(), String> {
     let normalized = target_path.trim().trim_matches(|c| c == '\'' || c == '"');
@@ -154,6 +170,23 @@ pub async fn fs_open_path(_app: AppHandle, target_path: String) -> Result<(), St
     Ok(())
 }
 
+/// No Android: abre via intent VIEW com FileProvider (Kotlin).
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn fs_open_path(app: AppHandle, target_path: String) -> Result<(), String> {
+    let normalized = target_path.trim().trim_matches(|c| c == '\'' || c == '"');
+    if normalized.is_empty() {
+        return Err("path vazio".into());
+    }
+    let _: serde_json::Value = crate::mobile_ytdlp::call_mobile(
+        &app,
+        "openFile",
+        &serde_json::json!({ "path": normalized }),
+    )
+    .await?;
+    Ok(())
+}
+
 /// `shell:selectFolder` — abre diálogo para selecionar pasta.
 /// Paridade `main.cjs:357-368`.
 #[tauri::command]
@@ -191,6 +224,7 @@ pub async fn fs_select_folder(app: AppHandle, default_path: Option<String>) -> R
 
 /// `save-description` — salva arquivo de texto na pasta de downloads.
 /// Paridade `main.cjs:335-355`.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn fs_save_description(
     app: AppHandle,
@@ -198,6 +232,27 @@ pub async fn fs_save_description(
     content: String,
 ) -> Result<serde_json::Value, String> {
     let downloads = app.path().download_dir().map_err(|e| format!("{:?}", e))?;
+    Ok(write_description_file(&downloads, &filename, &content)?)
+}
+
+/// No Android: mesma lógica, na pasta do app (Kotlin).
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn fs_save_description(
+    app: AppHandle,
+    filename: String,
+    content: String,
+) -> Result<serde_json::Value, String> {
+    let dir: String =
+        crate::mobile_ytdlp::downloads_dir(&app).await?.to_string_lossy().into_owned();
+    Ok(write_description_file(&PathBuf::from(dir), &filename, &content)?)
+}
+
+fn write_description_file(
+    downloads: &Path,
+    filename: &str,
+    content: &str,
+) -> Result<serde_json::Value, String> {
     let safe = filename.trim().trim_matches(|c| c == '\'' || c == '"');
     let safe = safe.replace(|c: char| matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'), "_");
     let mut file_path = downloads.join(&safe);
@@ -565,6 +620,7 @@ fn remove_temp_variants(base: &Path) -> u32 {
 /// (`-c copy`, segundos). NÃO repassa `--download-sections`: ele delegaria o
 /// fetch ao ffmpeg remoto (1 conexão, sem cliente do yt-dlp → 403 e
 /// lerdeza no YouTube, stdout mudo, sem resume).
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn ytdlp_download(
     app: AppHandle,
@@ -963,10 +1019,165 @@ pub async fn ytdlp_download(
     }
 }
 
+/// Resposta do comando `execute` do plugin Kotlin.
+/// O Kotlin resolve com chave camelCase (`filePath`); o alias garante a
+/// desserialização — sem ele `file_path` vinha `None` e o download concluído
+/// (evento `complete` já emitido) era sobrescrito por
+/// "download concluído sem arquivo final".
+#[cfg(target_os = "android")]
+#[derive(Debug, serde::Deserialize)]
+struct MobileExecuteResult {
+    #[serde(default)]
+    #[allow(dead_code)]
+    out: String,
+    #[serde(default, alias = "filePath")]
+    file_path: Option<String>,
+    // Tamanho vem no evento `complete` (usado pela UI); no `resolve` é só
+    // conferência — mantém desserializado p/ detectar payload incompleto.
+    #[serde(default)]
+    #[allow(dead_code)]
+    size: u64,
+}
+
+#[cfg(all(test, target_os = "android"))]
+mod mobile_contract_tests {
+    use super::MobileExecuteResult;
+
+    /// Contrato FFI com `YtDlpPlugin.kt`: o `invoke.resolve` entrega chaves
+    /// camelCase (`filePath`). Regressão de 2026-09-30: sem o alias, o campo
+    /// vinha `None` e download concluído virava "sem arquivo final".
+    #[test]
+    fn execute_result_parses_kotlin_camel_case() {
+        let raw = r#"{"filePath": "/dl/video.mp3", "size": 12345}"#;
+        let r: MobileExecuteResult = serde_json::from_str(raw).expect("parse");
+        assert_eq!(r.file_path.as_deref(), Some("/dl/video.mp3"));
+        assert_eq!(r.size, 12345);
+    }
+
+    #[test]
+    fn execute_result_tolerates_missing_fields() {
+        let r: MobileExecuteResult = serde_json::from_str("{}").expect("parse");
+        assert!(r.file_path.is_none());
+    }
+}
+
+/// `ytdlp_download` no Android: monta o argv canônico do desktop
+/// (`build_args`, mesma paridade de flags) e executa no yt-dlp embarcado
+/// via plugin Kotlin. Progresso/conclusão chegam pelo evento
+/// `yt-dlp-progress` emitido pelo Kotlin no formato do DownloadEngine.
+///
+/// Diferenças mobile (sem ffmpeg CLI local):
+/// - sem `--progress-template` (o Kotlin parseia o formato padrão);
+/// - sem `--ffmpeg-location` (a lib injeta o ffmpeg embarcado sozinha);
+/// - `download_sections` repassado nativo (sem corte local pós-download).
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn ytdlp_download(
+    app: AppHandle,
+    options: Option<crate::ytdlp::args::DownloadParams>,
+    params: Option<crate::ytdlp::args::DownloadParams>,
+    payload: Option<crate::ytdlp::args::DownloadParams>,
+) -> Result<String, String> {
+    let params = options
+        .or(params)
+        .or(payload)
+        .ok_or_else(|| "Nenhum parâmetro fornecido para download (esperado options, params ou payload)".to_string())?;
+    eprintln!("[ytdlp_download:android] START id={} url={}", params.id, params.url);
+    take_cleanup_intent(&params.id);
+
+    let output_dir = crate::mobile_ytdlp::downloads_dir(&app).await?;
+    std::fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
+
+    // Até 2 tentativas: a 2ª sem legendas se a 1ª falhar citando legenda
+    // (GAP1 — mesmo contrato do desktop).
+    // `--ppa` é removido no mobile (ver `strip_mobile_unsupported`): se o
+    // usuário pediu filtros, avisa no `complete` via `warnFilters` em vez de
+    // entregar o arquivo calado sem eles. Lê antes do move p/ `attempt_params`.
+    let filters_dropped = params.normalize_audio.unwrap_or(false)
+        || params.video_sharpen.as_deref().is_some_and(|s| !s.is_empty() && s != "none");
+    let mut attempt_params = params;
+    for attempt in 0..2 {
+        let mut argv = crate::ytdlp::args::build_args(&attempt_params, &output_dir, None);
+        strip_mobile_unsupported(&mut argv);
+        eprintln!("[ytdlp_download:android] argv (tentativa {}): {:?}", attempt + 1, argv);
+
+        let payload = serde_json::json!({
+            "argv": argv,
+            "processId": attempt_params.id,
+            "warnFilters": filters_dropped,
+            "title": attempt_params.title.as_deref().unwrap_or(""),
+            "publicSubdir": attempt_params.mobile_public_subdir
+                .as_deref()
+                .unwrap_or("LinkFetcher"),
+        });
+        let res: Result<MobileExecuteResult, String> =
+            crate::mobile_ytdlp::call_mobile(&app, "execute", &payload).await;
+        match res {
+            Ok(r) => {
+                let _ = forget_download_paths(&attempt_params.id);
+                let _ = take_cleanup_intent(&attempt_params.id);
+                if let Some(fp) = r.file_path {
+                    return Ok(fp);
+                }
+                return Err("download concluído sem arquivo final".into());
+            }
+            Err(e) => {
+                let asked = attempt_params.write_subs.unwrap_or(false)
+                    || attempt_params.write_auto_subs.unwrap_or(false);
+                if attempt == 0
+                    && attempt_params.subs_fallback.is_none()
+                    && asked
+                    && e.to_lowercase().contains("subtitle")
+                {
+                    eprintln!("[ytdlp_download:android] subs falharam; repetindo sem legendas");
+                    attempt_params.subs_fallback = Some(e);
+                    attempt_params.write_subs = Some(false);
+                    attempt_params.write_auto_subs = Some(false);
+                    attempt_params.embed_subs = Some(false);
+                    continue;
+                }
+                if take_cleanup_intent(&attempt_params.id) {
+                    let _ = forget_download_paths(&attempt_params.id);
+                }
+                return Err(e);
+            }
+        }
+    }
+    Err("download falhou após retry".into())
+}
+
+/// Remove do argv o que só faz sentido no desktop: template de progresso
+/// custom (o Kotlin parseia o formato padrão do yt-dlp),
+/// `--ffmpeg-location` (a lib injeta o ffmpeg embarcado automaticamente) e
+/// `--ppa` (pós-processamento via ffmpeg CLI com filtros loudnorm/unsharp —
+/// não confiável no ffmpeg embarcado do youtubedl-android; o download segue
+/// sem o filtro em vez de falhar).
+#[cfg(target_os = "android")]
+fn strip_mobile_unsupported(argv: &mut Vec<String>) {
+    let mut out = Vec::with_capacity(argv.len());
+    let mut skip_next = false;
+    for a in argv.drain(..) {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if a == "--progress-template" || a == "--ffmpeg-location" || a == "--ppa" {
+            skip_next = true;
+            continue;
+        }
+        if a == crate::ytdlp::args::PROGRESS_TEMPLATE {
+            continue;
+        }
+        out.push(a);
+    }
+    *argv = out;
+}
+
 /// `ytdlp_cancel` — cancela um download ativo via CancelMap.
 /// Aceita { id: String }, { options: { id: String } } ou string direta.
 /// `cleanup=true` = cancelamento definitivo: a task apaga os `.part` ao
 /// terminar. Pausa omite a flag e preserva o `.part` para resume.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn ytdlp_cancel(
     options: Option<serde_json::Value>,
@@ -1010,11 +1221,57 @@ pub async fn ytdlp_cancel(
     }
 }
 
+/// `ytdlp_cancel` no Android: mata o processo no yt-dlp embarcado (Kotlin).
+/// `cleanup=true` pede ao Kotlin para apagar os `.part` da sessão.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn ytdlp_cancel(
+    app: AppHandle,
+    options: Option<serde_json::Value>,
+    params: Option<serde_json::Value>,
+    payload: Option<serde_json::Value>,
+    id: Option<String>,
+    cleanup: Option<bool>,
+) -> Result<(), String> {
+    let nested_cleanup = options
+        .as_ref()
+        .or(params.as_ref())
+        .or(payload.as_ref())
+        .and_then(|v| v.get("cleanup").and_then(|c| c.as_bool()))
+        .unwrap_or(false);
+    let want_cleanup = cleanup.unwrap_or(false) || nested_cleanup;
+    let resolved_id = if let Some(s) = id {
+        s
+    } else if let Some(ref opts) = options.or(params).or(payload) {
+        if let Some(s) = opts.as_str() {
+            s.to_owned()
+        } else if let Some(id_val) = opts.get("id").and_then(|v| v.as_str()) {
+            id_val.to_owned()
+        } else {
+            return Err("ID de download inválido para cancelamento".into());
+        }
+    } else {
+        return Err("Nenhum ID fornecido para cancelamento".into());
+    };
+
+    if want_cleanup {
+        mark_cleanup_intent(&resolved_id);
+    }
+    let killed = crate::mobile_ytdlp::cancel_mobile(&app, &resolved_id, want_cleanup).await?;
+    if killed {
+        eprintln!("[ytdlp_cancel:android] Cancelled download id={}", resolved_id);
+        Ok(())
+    } else {
+        Err("Nenhum download ativo com esse id".into())
+    }
+}
+
 /// `ytdlp_cleanup` — apaga artefatos temporários de um download
 /// (`.part`, `.ytdl`, `.temp`, `.cuttmp.*`, fragmentos `-Frag*`).
 /// Aceita `{ id }` (usa os destinos rastreados da sessão), `{ filePath }`
 /// explícito, ou ambos. Só atua dentro da pasta de downloads — nunca apaga
 /// o arquivo final nem nada fora dela. Falha de forma segura (idempotente).
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn ytdlp_cleanup(
     app: AppHandle,
@@ -1035,6 +1292,44 @@ pub async fn ytdlp_cleanup(
     }
     if let Some(did) = id {
         // Consome eventual intenção pendente (processo já morto).
+        let _ = take_cleanup_intent(&did);
+        if let Some(remembered) = forget_download_paths(&did) {
+            for rp in remembered {
+                let p = PathBuf::from(rp);
+                if p.parent() == Some(downloads.as_path()) && !targets.contains(&p) {
+                    targets.push(p);
+                }
+            }
+        }
+    }
+    let mut cleaned = 0u32;
+    for t in &targets {
+        cleaned += remove_temp_variants(t);
+    }
+    Ok(serde_json::json!({ "success": true, "cleaned": cleaned }))
+}
+
+/// `ytdlp_cleanup` no Android: mesma lógica, restrita à pasta do app.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn ytdlp_cleanup(
+    app: AppHandle,
+    id: Option<String>,
+    #[allow(non_snake_case)] filePath: Option<String>,
+) -> Result<serde_json::Value, String> {
+    if id.is_none() && filePath.is_none() {
+        return Err("Nenhum id ou filePath fornecido para limpeza".into());
+    }
+    let downloads = crate::mobile_ytdlp::downloads_dir(&app).await?;
+    let mut targets: Vec<PathBuf> = Vec::new();
+    if let Some(fp) = filePath {
+        let p = PathBuf::from(fp.trim().trim_matches(|c| c == '\'' || c == '"'));
+        if p.parent() != Some(downloads.as_path()) {
+            return Err("filePath fora da pasta de downloads".into());
+        }
+        targets.push(p);
+    }
+    if let Some(did) = id {
         let _ = take_cleanup_intent(&did);
         if let Some(remembered) = forget_download_paths(&did) {
             for rp in remembered {

@@ -8,6 +8,7 @@ import { AppProvider, useApp, SettingsSync } from './context/AppContext';
 import { ThemeWrapper } from './components/ThemeWrapper';
 import { LazyMotionProvider } from './animation/LazyMotionProvider';
 import { CSSPageTransition } from './animation/CSSPageTransition';
+import { isAndroid } from './core/ytdlp/YtDlpAdapter';
 const Sidebar = React.lazy(() => import('./components/Sidebar').then(m => ({ default: m.Sidebar })));
 const ClipboardPopup = React.lazy(() => import('./components/ClipboardPopup').then(m => ({ default: m.ClipboardPopup })));
 const FirstRunClipboardPrompt = React.lazy(() => import('./components/FirstRunClipboardPrompt').then(m => ({ default: m.FirstRunClipboardPrompt })));
@@ -32,7 +33,9 @@ function DashboardContent() {
   const dismissClipboardPopup = useCallback(() => setShowClipboardPopup(false), []);
 
   const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
-  const [needsSetup, setNeedsSetup] = useState(isTauri);
+  // No Android o yt-dlp é embarcado (ytdlp_status sempre ready): sem overlay
+  // de setup — evita invoke+listen inúteis no boot mobile.
+  const [needsSetup, setNeedsSetup] = useState(isTauri && !isAndroid());
 
   // ── Clipboard monitoring lifecycle ────────────────────────────────────────
   // Polling real via plugin nativo (2s): mostra popup ao copiar um link.
@@ -121,7 +124,7 @@ function DashboardContent() {
 
   return (
     <div className="h-full flex flex-col lg:flex-row overflow-hidden">
-      {needsSetup && (
+      {needsSetup && !isAndroid() && (
         <Suspense fallback={null}>
           <BinarySetupOverlay onReady={() => setNeedsSetup(false)} />
         </Suspense>
@@ -136,10 +139,12 @@ function DashboardContent() {
       {/* Main Panel */}
       <main className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain relative p-4 md:p-8">
 
-        {/* Auto-Update Banner — lazy loaded */}
-        <Suspense fallback={null}>
-          <UpdateBanner />
-        </Suspense>
+        {/* Auto-Update Banner — lazy loaded (desktop only: sem plugin no mobile) */}
+        {!isAndroid() && (
+          <Suspense fallback={null}>
+            <UpdateBanner />
+          </Suspense>
+        )}
 
         {/* Dynamic transition container */}
         <div className="lf-animated-view">

@@ -81,6 +81,16 @@ pub struct DownloadParams {
     pub concurrent_fragments: Option<f64>,
     #[serde(default)]
     pub retries: Option<f64>,
+    /// Android: título p/ a notificação nativa de progresso/conclusão.
+    /// Não vira argv. Desktop ignora (lido só no `cfg android`).
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub title: Option<String>,
+    /// Android: subpasta pública de destino (MediaStore). Não vira argv —
+    /// só repassada ao plugin Kotlin. Desktop ignora (lido só no `cfg android`).
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub mobile_public_subdir: Option<String>,
 }
 
 fn is_true(v: &Option<bool>) -> bool {

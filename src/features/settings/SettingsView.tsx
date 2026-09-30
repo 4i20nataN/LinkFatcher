@@ -40,6 +40,21 @@ export const SettingsView: React.FC = () => {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const isElectron = typeof window !== 'undefined' && !!window.electron;
+  // Tauri mobile (Android): sem diálogo de pasta nem path custom — o app
+  // usa a pasta própria no armazenamento externo (via `fs_get_downloads_path`).
+  const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+  const [mobileDir, setMobileDir] = useState('');
+
+  useEffect(() => {
+    if (!isAndroid) return;
+    (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const dir = await invoke<string>('fs_get_downloads_path');
+        setMobileDir(dir);
+      } catch { /* mantém fallback */ }
+    })();
+  }, [isAndroid]);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -64,6 +79,19 @@ export const SettingsView: React.FC = () => {
   }, [settings.updates, isElectron]);
 
   const handleOpenFolder = async () => {
+    if (isAndroid) {
+      // No Android abre a pasta do app (resolve na hora). `defaultDir` é
+      // ignorado no mobile (scoped storage) — nunca cai no fluxo desktop.
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const dir = mobileDir || await invoke<string>('fs_get_downloads_path');
+        await invoke('fs_open_path', { target_path: dir });
+      } catch (err: any) {
+        const detail = typeof err === 'string' ? err : err?.message;
+        showToast((settings.language === 'en' ? 'Failed to open: ' : 'Falha ao abrir: ') + (detail || ''));
+      }
+      return;
+    }
     const downloadPath = settings.defaultDir || '';
     if (!downloadPath) {
       showToast(settings.language === 'en' ? 'No folder configured. Choose a destination folder first.' : 'Nenhuma pasta configurada. Escolha uma pasta de destino primeiro.');
@@ -322,7 +350,51 @@ export const SettingsView: React.FC = () => {
             </h3>
 
             <div className="space-y-2">
-                <span className="text-xs lf-text-secondary font-medium">{t('destinationFolder')}</span>                <div className="flex gap-2">
+                <span className="text-xs lf-text-secondary font-medium">{t('destinationFolder')}</span>
+                {isAndroid ? (
+                <>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={mobileDir || (settings.language === 'en' ? 'App folder (loading…)' : 'Pasta do app (carregando…)')}
+                    readOnly
+                    className={`flex-1 min-w-0 px-3 py-2 rounded-xl lf-surface border border-zinc-800 text-xs lf-text-secondary font-mono focus:outline-none focus:ring-2 ${getAccentRingClass(settings)}`}
+                  />
+                  <button
+                    onClick={handleOpenFolder}
+                    className="px-3 py-2 rounded-xl lf-surface-raised hover:bg-zinc-800 lf-text hover:text-white text-xs font-semibold flex items-center gap-1.5 border border-zinc-700/50 transition-all whitespace-nowrap"
+                  >
+                    <FolderOpen size={12} />
+                    {settings.language === 'en' ? 'Open' : 'Abrir'}
+                  </button>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <span className="text-[11px] lf-text-muted font-mono whitespace-nowrap">Downloads/</span>
+                  <input
+                    type="text"
+                    value={settings.mobilePublicSubdir ?? 'LinkFetcher'}
+                    onChange={(e) => updateSettings({ mobilePublicSubdir: e.target.value.replace(/[/\\]/g, '').slice(0, 32) })}
+                    maxLength={32}
+                    className={`flex-1 min-w-0 px-3 py-2 rounded-xl lf-surface border border-zinc-800 text-xs lf-text-secondary font-mono focus:outline-none focus:ring-2 ${getAccentRingClass(settings)}`}
+                    placeholder="LinkFetcher"
+                  />
+                </div>
+                <p className="text-[10px] lf-text-faint flex items-start gap-1">
+                  <span className="shrink-0">📱</span>
+                  <span className="min-w-0 break-words">
+                  {(settings.mobilePublicSubdir ?? 'LinkFetcher') === ''
+                    ? (settings.language === 'en'
+                      ? 'Files go straight to Downloads root.'
+                      : 'Arquivos vão direto para a raiz de Downloads.')
+                    : (settings.language === 'en'
+                      ? `Files are published to Downloads/${settings.mobilePublicSubdir ?? 'LinkFetcher'} (visible in Files and players). Clear the field to use Downloads root. Arbitrary paths are blocked by Android scoped storage.`
+                      : `Arquivos publicados em Downloads/${settings.mobilePublicSubdir ?? 'LinkFetcher'} (visíveis em Arquivos e players). Apague o campo para usar a raiz de Downloads. Pasta arbitrária é bloqueada pelo scoped storage do Android.`)}
+                  </span>
+                </p>
+                </>
+                ) : (
+                <>
+                <div className="flex gap-2">
                   <input
                     type="text"
                     value={settings.defaultDir}
@@ -354,6 +426,8 @@ export const SettingsView: React.FC = () => {
                     : 'Diálogos de pasta nativos disponíveis'}
                   </span>
                 </p>
+                </>
+                )}
               </div>
 
             <div className="space-y-2">
@@ -385,6 +459,10 @@ export const SettingsView: React.FC = () => {
                 <Toggle value={settings.notifications} onChange={() => updateSettings({ notifications: !settings.notifications })} settings={settings} />
               </div>
 
+              {/* Auto-update: só desktop (plugin updater não registrado no
+                  Android — lá a atualização é pela loja/APK). Toggle inerte
+                  aqui seria placebo. */}
+              {!isAndroid && (
               <div className="flex items-center justify-between p-3 rounded-xl lf-surface-40 lf-border">
                 <div className="space-y-0.5">
                   <span className="text-xs font-semibold lf-text-secondary">{t('updatesLabel')}</span>
@@ -392,6 +470,7 @@ export const SettingsView: React.FC = () => {
                 </div>
                 <Toggle value={settings.updates} onChange={() => updateSettings({ updates: !settings.updates })} settings={settings} />
               </div>
+              )}
             </div>
           </div>
 

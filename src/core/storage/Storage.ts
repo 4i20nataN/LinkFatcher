@@ -98,6 +98,7 @@ export class StorageService {
       iconStyle: 'lucide-mono',
       language: 'pt',
       defaultDir: '',
+      mobilePublicSubdir: 'LinkFetcher',
       bandLimit: 0,
       maxConcurrent: 3,
       autoDownload: true,

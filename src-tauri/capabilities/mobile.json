@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile-capabilities",
+  "description": "Permissions for Android/iOS targets",
+  "platforms": [
+    "android",
+    "iOS"
+  ],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "fs:allow-download-write",
+    "fs:allow-app-write",
+    "fs:allow-app-read",
+    "notification:default",
+    "clipboard-manager:allow-read-text"
+  ]
+}
