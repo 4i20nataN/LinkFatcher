@@ -7,6 +7,7 @@
 <p align="center">
   Desktop media downloader powered by <strong>yt-dlp</strong> + <strong>ffmpeg</strong>.<br />
   Queue, 4K video, audio, thumbnails, cut sections, subtitles, SponsorBlock — for Windows & Linux.
+  <br />Also on <strong>Android</strong> (same engine embedded, sideload via GitHub Releases).
 </p>
 
 ## Features
@@ -28,8 +29,18 @@ Download the installer from [Releases](../../releases):
 |---------|-----------------------------|
 | Linux   | `LinkFetcher_*_amd64.deb` (also AppImage) |
 | Windows | `LinkFetcher_*_x64-setup.exe`             |
+| Android | `LinkFetcher.apk` (universal) or `LinkFetcher-<abi>.apk` per architecture (`arm64`, `armv7`, `x86_64`, `x86`) |
 
 > On first launch the app downloads official yt-dlp + ffmpeg binaries (~190 MB, one time only) and verifies them by hash before use.
+> On Android everything ships embedded (yt-dlp + QuickJS + ffmpeg, ~70–90 MB per ABI), files land in `Downloads/<folder>`, and app updates come from GitHub Releases (no Play Store): Settings → App updates → Install.
+
+## Android development
+
+```bash
+npm run tauri -- android dev      # on-device, hot-reload via dev server
+npm run tauri -- android build    # signed release (needs gen/android/key.properties, gitignored)
+cargo check --target armv7-linux-androideabi --lib --tests   # NDK env: CC_<target> + AR_<target>
+```
 
 ## Development
 

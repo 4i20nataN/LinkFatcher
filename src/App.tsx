@@ -37,6 +37,18 @@ function DashboardContent() {
   // de setup — evita invoke+listen inúteis no boot mobile.
   const [needsSetup, setNeedsSetup] = useState(isTauri && !isAndroid());
 
+  // Espelha o toggle de updates no plugin nativo (self-update do yt-dlp e
+  // afins respeitam). Só Android; desktop não tem o comando (ignora o erro).
+  useEffect(() => {
+    if (!isAndroid()) return;
+    (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('plugin:ytdlp|setUpdatesEnabled', { enabled: settings.updates !== false });
+      } catch { /* plugin indisponível: padrão ligado no nativo */ }
+    })();
+  }, [settings.updates]);
+
   // ── Clipboard monitoring lifecycle ────────────────────────────────────────
   // Polling real via plugin nativo (2s): mostra popup ao copiar um link.
   useEffect(() => {

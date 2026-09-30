@@ -118,13 +118,35 @@ jobs:
       - name: Build release Android (APK + AAB assinados)
         run: npx tauri android build
 
+      - name: Arquivar mapping R8 (deobfuscar crashes futuros)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-mapping-${{ github.ref_name }}
+          path: src-tauri/gen/android/app/build/outputs/mapping/
+          retention-days: 90
+
+      - name: Empacotar splits por ABI
+        # O `tauri android build` garante o universal; os splits vêm daqui
+        # (incremental: Rust/Kotlin já compilados, só empacota).
+        run: |
+          cd src-tauri/gen/android
+          ./gradlew assembleArmRelease assembleArm64Release assembleX86Release assembleX86_64Release
+
       - name: Renomear artefatos
         run: |
           APK_DIR=src-tauri/gen/android/app/build/outputs
-          cp "$APK_DIR/apk/universal/release/app-universal-release.apk" \
-            "$APK_DIR/LinkFetcher.apk"
-          cp "$APK_DIR/bundle/universalRelease/app-universal-release.aab" \
-            "$APK_DIR/LinkFetcher.aab"
+          # Splits por ABI (~70-90 MB) + universal (~244 MB, curinga).
+          # Nomes curtos abraçados pelo AndroidUpdater (com fallback p/ universal).
+          # Falha alto se algum split faltar: melhor CI vermelho que release
+          # sem o APK do aparelho do usuário.
+          cp "$APK_DIR/apk/arm64/release/app-arm64-release.apk" "$APK_DIR/LinkFetcher-arm64.apk"
+          cp "$APK_DIR/apk/arm/release/app-arm-release.apk" "$APK_DIR/LinkFetcher-armv7.apk"
+          cp "$APK_DIR/apk/x86_64/release/app-x86_64-release.apk" "$APK_DIR/LinkFetcher-x86_64.apk"
+          cp "$APK_DIR/apk/x86/release/app-x86-release.apk" "$APK_DIR/LinkFetcher-x86.apk"
+          cp "$APK_DIR/apk/universal/release/app-universal-release.apk" "$APK_DIR/LinkFetcher.apk"
+          cp "$APK_DIR/bundle/universalRelease/app-universal-release.aab" "$APK_DIR/LinkFetcher.aab"
+          ls -la "$APK_DIR"/LinkFetcher*.apk "$APK_DIR"/LinkFetcher.aab
 
       - name: Aguardar release existir (job desktop cria)
         env:
@@ -143,6 +165,10 @@ jobs:
         run: |
           APK_DIR=src-tauri/gen/android/app/build/outputs
           gh release upload "${GITHUB_REF_NAME}" \
+            "$APK_DIR/LinkFetcher-arm64.apk" \
+            "$APK_DIR/LinkFetcher-armv7.apk" \
+            "$APK_DIR/LinkFetcher-x86_64.apk" \
+            "$APK_DIR/LinkFetcher-x86.apk" \
             "$APK_DIR/LinkFetcher.apk" \
             "$APK_DIR/LinkFetcher.aab" \
             --clobber

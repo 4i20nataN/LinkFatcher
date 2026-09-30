@@ -22,15 +22,15 @@ export function setupElectronShim() {
           return path as unknown as T;
         }
         case 'shell:openPath': {
-          // Chave snake_case: o comando Rust declara `target_path` e o Tauri
-          // casa argumentos pelo nome exato (camelCase rejeita com erro).
+          // Args top-level питом: o Tauri converte snake_case (Rust) <->
+          // camelCase (JS) sozinho — aqui vai camelCase, como o core espera.
           const targetPath = (args[0] as string) || '';
-          await invoke('fs_open_path', { target_path: targetPath });
+          await invoke('fs_open_path', { targetPath });
           return undefined as unknown as T;
         }
         case 'shell:selectFolder': {
           const defaultPath = (args[0] as string) || undefined;
-          const selected = await invoke<string | null>('fs_select_folder', { default_path: defaultPath });
+          const selected = await invoke<string | null>('fs_select_folder', { defaultPath });
           return selected as unknown as T;
         }
         case 'save-description': {
@@ -44,7 +44,7 @@ export function setupElectronShim() {
         case 'fs:stat': {
           const payload = args[0] as { filePath?: string } | string;
           const filePath = typeof payload === 'string' ? payload : (payload?.filePath || '');
-          const res = await invoke<T>('fs_stat', { file_path: filePath });
+          const res = await invoke<T>('fs_stat', { filePath });
           return res;
         }
         case 'yt-dlp-probe': {
