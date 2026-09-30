@@ -138,12 +138,6 @@ jobs:
           cp "$APK_DIR/apk/universal/release/app-universal-release.apk" "$APK_DIR/LinkFetcher.apk"
           cp "$APK_DIR/bundle/universalRelease/app-universal-release.aab" "$APK_DIR/LinkFetcher.aab"
           ls -la "$APK_DIR/LinkFetcher.apk" "$APK_DIR/LinkFetcher.aab"
-          cp "$SRC" "$APK_DIR/${{ matrix.file }}"
-          ls -la "$APK_DIR/${{ matrix.file }}"
-          if [ "${{ matrix.abi }}" = "universal" ]; then
-            cp "$APK_DIR/bundle/universalRelease/app-universal-release.aab" "$APK_DIR/LinkFetcher.aab"
-            ls -la "$APK_DIR/LinkFetcher.aab"
-          fi
 
       - name: Aguardar release existir (job desktop cria)
         env:
