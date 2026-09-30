@@ -59,7 +59,28 @@ jobs:
   android:
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: universal
+            filter: "arm64-v8a,armeabi-v7a,x86,x86_64"
+            file: LinkFetcher.apk
+          - abi: arm64
+            filter: "arm64-v8a"
+            file: LinkFetcher-arm64.apk
+          - abi: armv7
+            filter: "armeabi-v7a"
+            file: LinkFetcher-armv7.apk
+          - abi: x86_64
+            filter: "x86_64"
+            file: LinkFetcher-x86_64.apk
+          - abi: x86
+            filter: "x86"
+            file: LinkFetcher-x86.apk
     runs-on: 'ubuntu-22.04'
+    env:
+      LINKFETCHER_ABIS: ${{ matrix.filter }}
     steps:
       - name: Checkout do Repositório
         uses: actions/checkout@v4
@@ -116,8 +137,8 @@ jobs:
           EOF
 
       - name: Build release Android (APK + AAB assinados)
-        # O assembleRelease do Tauri já empacota os splits por ABI (provado
-        # via dry-run do grafo). NÃO rodar gradle avulso: rustBuild fora da
+        # Matrix por ABI via LINKFETCHER_ABIS: cada job gera um universal
+        # enxuto (1 ABI). NÃO rodar gradle avulso: rustBuild fora da
         # orquestração do Tauri panica (WebSocket indisponível).
         run: npx tauri android build
 
@@ -125,24 +146,21 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: android-mapping-${{ github.ref_name }}
+          name: android-mapping-${{ matrix.abi }}-${{ github.ref_name }}
           path: src-tauri/gen/android/app/build/outputs/mapping/
           retention-days: 90
 
-      - name: Renomear artefatos
+      - name: Renomear artefato (1 APK por job da matrix)
+        # Cada job gera SÓ sua ABI (filtro LINKFETCHER_ABIS): o universal
+        # sai do próprio `tauri android build`, sem gradle avulso.
         run: |
           APK_DIR=src-tauri/gen/android/app/build/outputs
-          # Splits por ABI (~70-90 MB) + universal (~244 MB, curinga).
-          # Nomes curtos abraçados pelo AndroidUpdater (com fallback p/ universal).
-          # Falha alto se algum split faltar: melhor CI vermelho que release
-          # sem o APK do aparelho do usuário.
-          cp "$APK_DIR/apk/arm64/release/app-arm64-release.apk" "$APK_DIR/LinkFetcher-arm64.apk"
-          cp "$APK_DIR/apk/arm/release/app-arm-release.apk" "$APK_DIR/LinkFetcher-armv7.apk"
-          cp "$APK_DIR/apk/x86_64/release/app-x86_64-release.apk" "$APK_DIR/LinkFetcher-x86_64.apk"
-          cp "$APK_DIR/apk/x86/release/app-x86-release.apk" "$APK_DIR/LinkFetcher-x86.apk"
-          cp "$APK_DIR/apk/universal/release/app-universal-release.apk" "$APK_DIR/LinkFetcher.apk"
-          cp "$APK_DIR/bundle/universalRelease/app-universal-release.aab" "$APK_DIR/LinkFetcher.aab"
-          ls -la "$APK_DIR"/LinkFetcher*.apk "$APK_DIR"/LinkFetcher.aab
+          cp "$APK_DIR/apk/universal/release/app-universal-release.apk" "$APK_DIR/${{ matrix.file }}"
+          ls -la "$APK_DIR/${{ matrix.file }}"
+          if [ "${{ matrix.abi }}" = "universal" ]; then
+            cp "$APK_DIR/bundle/universalRelease/app-universal-release.aab" "$APK_DIR/LinkFetcher.aab"
+            ls -la "$APK_DIR/LinkFetcher.aab"
+          fi
 
       - name: Aguardar release existir (job desktop cria)
         env:
@@ -160,11 +178,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           APK_DIR=src-tauri/gen/android/app/build/outputs
-          gh release upload "${GITHUB_REF_NAME}" \
-            "$APK_DIR/LinkFetcher-arm64.apk" \
-            "$APK_DIR/LinkFetcher-armv7.apk" \
-            "$APK_DIR/LinkFetcher-x86_64.apk" \
-            "$APK_DIR/LinkFetcher-x86.apk" \
-            "$APK_DIR/LinkFetcher.apk" \
-            "$APK_DIR/LinkFetcher.aab" \
-            --clobber
+          FILES="$APK_DIR/${{ matrix.file }}"
+          if [ "${{ matrix.abi }}" = "universal" ]; then
+            FILES="$FILES $APK_DIR/LinkFetcher.aab"
+          fi
+          # shellcheck disable=SC2086
+          gh release upload "${GITHUB_REF_NAME}" $FILES --clobber
