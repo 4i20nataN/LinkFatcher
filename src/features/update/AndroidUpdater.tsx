@@ -44,10 +44,16 @@ export function AndroidUpdater() {
   const check = useCallback(async () => {
     setStage('checking');
     setError('');
+    // Timeout: fetch sem sinal pendura a UI em rede móvel ruim.
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 15000);
     try {
       const { getVersion } = await import('@tauri-apps/api/app');
       const current = await getVersion();
-      const res = await fetch(LATEST_URL, { headers: { Accept: 'application/vnd.github+json' } });
+      const res = await fetch(LATEST_URL, {
+        headers: { Accept: 'application/vnd.github+json' },
+        signal: ctl.signal,
+      });
       if (!res.ok) throw new Error(`GitHub HTTP ${res.status}`);
       const rel = await res.json();
       const tag: string = rel.tag_name || '';
@@ -76,9 +82,16 @@ export function AndroidUpdater() {
         setStage('idle');
       }
     } catch (e: any) {
-      setError(e?.message || (en ? 'Check failed' : 'Falha na verificação'));
+      clearTimeout(timer);
+      if (e?.name === 'AbortError') {
+        setError(en ? 'Check timed out (15s)' : 'Verificação expirou (15s)');
+      } else {
+        setError(e?.message || (en ? 'Check failed' : 'Falha na verificação'));
+      }
       setStage('error');
+      return;
     }
+    clearTimeout(timer);
   }, [en]);
 
   const download = useCallback(async () => {

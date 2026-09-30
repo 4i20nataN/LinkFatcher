@@ -601,8 +601,12 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun updateDownload(invoke: Invoke) {
         val args = invoke.parseArgs(UpdateDownloadArgs::class.java)
-        val fileName = args.fileName.substringAfterLast('/').trim()
-        if (args.url.isBlank() || fileName.isBlank() || !fileName.endsWith(".apk")) {
+        // Sanitiza como o publish: sem separadores, sem `..`, só .apk.
+        // O comando é same-app, mas path traversal nunca deve passar.
+        val fileName = args.fileName.substringAfterLast('/').substringAfterLast('\\')
+            .trim().replace(Regex("\\.+"), ".")
+            .take(64).trim().trim('.')
+        if (args.url.isBlank() || !fileName.endsWith(".apk") || ".." in fileName) {
             invoke.reject("URL ou nome de APK inválidos")
             return
         }
