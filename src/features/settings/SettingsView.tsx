@@ -121,7 +121,10 @@ export const SettingsView: React.FC = () => {
         const { writeFile } = await import('@tauri-apps/plugin-fs');
         const { join } = await import('@tauri-apps/api/path');
         const dir = mobileDir || await invoke<string>('fs_get_downloads_path');
-        const filename = `linkfetcher-links-${new Date().toISOString().slice(0, 10)}.json`;
+        // Timestamp no nome: MediaStore tolera DISPLAY_NAME repetido e o
+        // usuário terminaria com arquivos indistinguíveis em Downloads.
+        const stamp = new Date().toISOString().replace(/[:.]/g, '').slice(0, 15);
+        const filename = `linkfetcher-links-${stamp}.json`;
         const filePath = await join(dir, filename);
         await writeFile(filePath, new TextEncoder().encode(dataStr));
         await invoke('plugin:ytdlp|publishFile', { path: filePath });
@@ -132,7 +135,8 @@ export const SettingsView: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `linkfetcher-links-${new Date().toISOString().slice(0, 10)}.json`;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '').slice(0, 15);
+      a.download = `linkfetcher-links-${stamp}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

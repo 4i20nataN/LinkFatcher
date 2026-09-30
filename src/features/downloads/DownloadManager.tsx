@@ -79,6 +79,10 @@ export const DownloadManager: React.FC = () => {
   const { t } = useTranslation(settings);
   const [mediaFilter, setMediaFilter] = useState<'all' | 'audio' | 'video' | 'image' | 'playlist'>('all');
   const [statusFilters, setStatusFilters] = useState<Set<string>>(new Set());
+  // Cap de render: 300 itens com cards animados derrubam o scroll no armv7.
+  // Contadores/filtros usam a lista cheia; só o DOM é paginado.
+  const LIST_PAGE = 60;
+  const [visibleCount, setVisibleCount] = useState(LIST_PAGE);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [commandPreview, setCommandPreview] = useState<DownloadItem | null>(null);
 
@@ -139,6 +143,7 @@ export const DownloadManager: React.FC = () => {
       else next.add(status);
       return next;
     });
+    setVisibleCount(LIST_PAGE);
   };
 
   const handleShare = async (item: DownloadItem) => {
@@ -312,7 +317,7 @@ export const DownloadManager: React.FC = () => {
             return (
               <button
                 key={tab.id}
-                onClick={() => setMediaFilter(tab.id as any)}
+                onClick={() => { setMediaFilter(tab.id as any); setVisibleCount(LIST_PAGE); }}
                 className={`
                   flex-1 shrink-0 min-w-16 flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs font-semibold transition-all relative
                   ${isActive ? getAccentTextClass(settings) : 'lf-text-muted hover:text-zinc-300'}
@@ -398,8 +403,9 @@ export const DownloadManager: React.FC = () => {
           </div>
         ) : (
           /* Downloads Grid and List */
+          <>
           <AnimatedList initial={false}>
-            {filteredDownloads.map((item) => {
+            {filteredDownloads.slice(0, visibleCount).map((item) => {
               const platform = ProviderRegistry.getPlatformConfig(item.platform);
               const isQueued = item.status === 'queued';
               const isDownloading = item.status === 'downloading';
@@ -695,6 +701,17 @@ export const DownloadManager: React.FC = () => {
               );
             })}
           </AnimatedList>
+          {filteredDownloads.length > visibleCount && (
+            <button
+              onClick={() => setVisibleCount(c => c + LIST_PAGE)}
+              className="w-full py-2.5 rounded-xl lf-surface-40 border lf-border lf-text-secondary hover:text-white text-xs font-semibold transition-colors"
+            >
+              {settings.language === 'en'
+                ? `Show more (${filteredDownloads.length - visibleCount} remaining)`
+                : `Mostrar mais (${filteredDownloads.length - visibleCount} restantes)`}
+            </button>
+          )}
+          </>
         )}
       </div>
 

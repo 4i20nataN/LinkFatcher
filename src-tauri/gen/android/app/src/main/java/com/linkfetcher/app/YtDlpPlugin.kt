@@ -20,7 +20,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
 
 private const val TAG = "YtDlpPlugin"
 
@@ -68,12 +67,27 @@ class UpdateDownloadArgs {
     var fileName: String = ""
 }
 
+@InvokeArg
+class UpdatesEnabledArgs {
+    var enabled: Boolean = true
+}
+
 @TauriPlugin
 class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
 
-    private val executor = Executors.newCachedThreadPool()
+    // Pool limitado (núcleo 2, teto 8, fila ilimitada): picos de probes +
+    // downloads enfileiram em vez de explodir threads; sem Abort (invoke
+    // jamais pode ficar sem resposta por pool cheio).
+    private val executor = java.util.concurrent.ThreadPoolExecutor(
+        2, 8, 60L, java.util.concurrent.TimeUnit.SECONDS,
+        java.util.concurrent.LinkedBlockingQueue()
+    )
     private val lastPaths = ConcurrentHashMap<String, String>()
     private var webView: WebView? = null
+    // Self-update do yt-dlp respeita o toggle da UI (default ligado).
+    // Ajustado via comando `setUpdatesEnabled` no boot e ao trocar.
+    @Volatile
+    private var updatesEnabled = true
     // Downloads de APK em andamento (id do DownloadManager → nome do arquivo).
     private val pendingUpdates = ConcurrentHashMap<Long, String>()
 
@@ -121,6 +135,23 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             FFmpeg.getInstance().init(ctx)
         } catch (e: Exception) {
             Log.d(TAG, "ensureInitialized aviso: ${e.message}")
+        }
+    }
+
+    // Android 13+: sem POST_NOTIFICATIONS em runtime o SO descarta os avisos
+    // em silêncio. Fire-and-forget (sem callback): o SO mostra o diálogo uma
+    // vez; negar só cala as notificações, nunca o download.
+    private fun ensureNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return
+        try {
+            val perm = android.Manifest.permission.POST_NOTIFICATIONS
+            if (androidx.core.content.ContextCompat.checkSelfPermission(activity, perm) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                androidx.core.app.ActivityCompat.requestPermissions(activity, arrayOf(perm), 9021)
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "permissão de notificação: ${e.message}")
         }
     }
 
@@ -296,6 +327,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         }
         executor.execute cmd@{
             ensureInitialized()
+            ensureNotificationPermission()
             val startMs = System.currentTimeMillis()
             var captured: String? = null
             // Todos os destinos vistos (download + pós-processamento): o último
@@ -582,6 +614,32 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
     // Baixa o APK da release via DownloadManager do sistema (notificação,
     // retry e visibilidade nativos) e, ao concluir, abre o instalador.
     // Sem Play Store não há updater embarcado: este é o canal de update.
+
+    // Espelha o toggle de updates da UI (chamado no boot e ao trocar).
+    // Persiste em prefs p/ o MainActivity ler antes do JS existir.
+    @Command
+    fun setUpdatesEnabled(invoke: Invoke) {
+        updatesEnabled = try {
+            invoke.parseArgs(UpdatesEnabledArgs::class.java).enabled
+        } catch (_: Exception) {
+            true
+        }
+        try {
+            activity.getSharedPreferences("linkfetcher", android.content.Context.MODE_PRIVATE)
+                .edit().putBoolean("updates_enabled", updatesEnabled).apply()
+        } catch (_: Exception) { }
+        invoke.resolve(JSObject().apply { put("updatesEnabled", updatesEnabled) })
+    }
+
+    companion object {
+        // Lido pelo MainActivity antes do WebView/JS existir.
+        fun updatesEnabledStored(activity: Activity): Boolean = try {
+            activity.getSharedPreferences("linkfetcher", android.content.Context.MODE_PRIVATE)
+                .getBoolean("updates_enabled", true)
+        } catch (_: Exception) {
+            true
+        }
+    }
 
     // ABI do aparelho no vocabulário dos assets da release
     // (LinkFetcher-<abi>.apk): arm64, armv7, x86_64, x86.

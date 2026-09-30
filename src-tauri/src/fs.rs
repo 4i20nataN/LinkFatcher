@@ -1258,12 +1258,14 @@ pub async fn ytdlp_cancel(
         mark_cleanup_intent(&resolved_id);
     }
     let killed = crate::mobile_ytdlp::cancel_mobile(&app, &resolved_id, want_cleanup).await?;
+    // Id inexistente/processo já morto não é erro: o estado final desejado
+    // (nada rodando) já vale. Erro aqui viraria "failed" indevido no engine.
     if killed {
         eprintln!("[ytdlp_cancel:android] Cancelled download id={}", resolved_id);
-        Ok(())
     } else {
-        Err("Nenhum download ativo com esse id".into())
+        eprintln!("[ytdlp_cancel:android] Nothing running for id={}", resolved_id);
     }
+    Ok(())
 }
 
 /// `ytdlp_cleanup` — apaga artefatos temporários de um download

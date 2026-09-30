@@ -118,6 +118,14 @@ jobs:
       - name: Build release Android (APK + AAB assinados)
         run: npx tauri android build
 
+      - name: Arquivar mapping R8 (deobfuscar crashes futuros)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-mapping-${{ github.ref_name }}
+          path: src-tauri/gen/android/app/build/outputs/mapping/
+          retention-days: 90
+
       - name: Empacotar splits por ABI
         # O `tauri android build` garante o universal; os splits vêm daqui
         # (incremental: Rust/Kotlin já compilados, só empacota).

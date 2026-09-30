@@ -18,11 +18,15 @@ class MainActivity : TauriActivity() {
       Log.i("LinkFetcher", "YoutubeDL e FFmpeg inicializados com sucesso no Android")
       // yt-dlp embarcado envelhece rápido (quebra extração): atualiza em
       // background, sem travar a UI; falha de rede só mantém o embarcado.
-      // Só em rede não medida (Wi-Fi): o pacote tem dezenas de MB e o usuário
-      // pode estar no 4G.
+      // Só em rede não medida (Wi-Fi) e se o toggle de updates estiver ligado
+      // (lido das prefs — o JS ainda não existe neste ponto).
       val appContext = applicationContext
       Executors.newSingleThreadExecutor().execute {
         try {
+          if (!YtDlpPlugin.updatesEnabledStored(this@MainActivity)) {
+            Log.i("LinkFetcher", "yt-dlp update pulado (toggle desligado)")
+            return@execute
+          }
           val cm = appContext.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
             as android.net.ConnectivityManager
           if (cm.isActiveNetworkMetered) {

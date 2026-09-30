@@ -494,6 +494,13 @@ class DownloadEngineClass {
             finish();
             return;
           }
+          // Dedupe de transporte duplo (Tauri listen + CustomEvent no
+          // Android): segundo `complete` do mesmo ciclo é no-op, sem
+          // re-render nem persistência.
+          if (item.status === 'completed') {
+            finish();
+            return;
+          }
           item.status = 'completed';
           item.progress = 100;
           item.processing = false;
@@ -510,6 +517,11 @@ class DownloadEngineClass {
           this.notify();
         } else if (data.type === 'error') {
           if (item.status === 'paused' || item.status === 'cancelled') {
+            finish();
+            return;
+          }
+          // Mesmo dedupe do `complete`: erro duplicado não re-renderiza.
+          if (item.status === 'failed') {
             finish();
             return;
           }
