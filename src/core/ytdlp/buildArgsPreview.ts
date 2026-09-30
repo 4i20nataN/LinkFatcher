@@ -187,6 +187,7 @@ export function buildArgsPreview(item: {
   const outputTemplate = safeName ? `${safeName}.%(ext)s` : '%(title)s.%(ext)s';
   args.push('-o', outputTemplate);
 
-  args.push(item.url);
+  // Espelho de args.rs (S11): separador anti-flag antes da URL posicional.
+  args.push('--', item.url);
   return args;
 }
