@@ -24,7 +24,14 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     ndk {
-        abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64"))
+        // Corte de peso (2026-10-01, meta APK ≤120MB): só ABIs físicas.
+        // x86/x86_64 = emulador + Chromebook — fora do APK desde o corte,
+        // economia medida ~130MB (universal 239MB → ~106MB). NÃO é splits
+        // (enterrado: IncrementalSplitterRunnable × useLegacyPackaging, e o
+        // split que empacotou saiu com 239MB) — abiFilters filtra no merge,
+        // sem splitter. Caminho de volta se um dia importar: flavors per-ABI
+        // (plano item #2: LinkFetcher-<abi>.apk, updater já tem fallback).
+        abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
     }
     }
     packaging {
@@ -58,8 +65,6 @@ android {
             packaging {
                 jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
                 jniLibs.keepDebugSymbols.add("*/armeabi-v7a/*.so")
-                jniLibs.keepDebugSymbols.add("*/x86/*.so")
-                jniLibs.keepDebugSymbols.add("*/x86_64/*.so")
             }
         }
         getByName("release") {
