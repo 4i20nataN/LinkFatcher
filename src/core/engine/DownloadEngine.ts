@@ -588,13 +588,25 @@ class DownloadEngineClass {
         }
       };
 
-      // Listen for yt-dlp-progress events (transporte único: o Kotlin emite
-      // só via `trigger()`; desktop e Android ouvem pelo mesmo `listen`).
+      // Listen for yt-dlp-progress events (transporte DUPLO no Android:
+      // `trigger()` via Tauri-listen + CustomEvent via evaluateJavascript —
+      // regressão v1.4.0 provou que só-trigger não entrega no SM-A107M).
       const unlisten = await listen('yt-dlp-progress', (event) => {
         handleProgressData(event.payload);
       });
+
+      // Listen for yt-dlp-progress CustomEvents (Android WebView)
+      const onCustomProgress = (e: Event) => {
+        handleProgressData((e as CustomEvent).detail);
+      };
+      if (typeof window !== 'undefined') {
+        window.addEventListener('yt-dlp-progress', onCustomProgress);
+      }
       this.unlistenFns.set(item.id, () => {
         try { unlisten(); } catch { /* unlisten idempotente */ }
+        if (typeof window !== 'undefined') {
+          window.removeEventListener('yt-dlp-progress', onCustomProgress);
+        }
       });
 
       let settled = false;

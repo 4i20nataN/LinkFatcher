@@ -83,6 +83,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         java.util.concurrent.LinkedBlockingQueue()
     )
     private val lastPaths = ConcurrentHashMap<String, String>()
+    private var webView: WebView? = null
     // Jobs ativos (processId → início) + desfechos recentes: o `trigger()`
     // não enfileira — evento emitido com o WebView suspenso (minimizar/sair)
     // é descartado e o JS nunca recebe o `complete`, travando o item em
@@ -109,6 +110,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
 
     override fun load(webView: WebView) {
         super.load(webView)
+        this.webView = webView
         // Pre-warm em background: a 1ª init extrai o env Python dos assets
         // (segundos em aparelho fraco). Sem isso, a 1ª análise pagava esse
         // custo dentro do probe, parecendo "lentidão ao analisar".
@@ -170,15 +172,24 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
-    // Transporte único de progresso: `trigger()` (evento Tauri, ouvido pelo
-    // `listen` do frontend nas duas plataformas). O 2º transporte via
-    // `evaluateJavascript(CustomEvent)` foi removido: dobrava o IPC por tick
-    // de progresso sem nenhum consumidor exclusivo.
+    // Transporte DUPLO de progresso (regressão v1.4.0 revertida): `trigger()`
+    // (evento Tauri, `listen` no frontend) + `evaluateJavascript`
+    // (CustomEvent na window). O H4 removeu o 2º por "dobrar o IPC", mas no
+    // SM-A107M o `trigger()` não entrega progresso — o CustomEvent era o que
+    // funcionava em v1.3.1. Dedupe no engine (valores idempotentes + guards
+    // de status) absorve a duplicata. Não remover de novo sem prova no
+    // aparelho de que o `trigger()` sozinho sustenta o progresso.
     private fun emitOnUi(event: String, build: JSObject.() -> Unit) {
         val data = JSObject()
         data.build()
+        val jsonStr = data.toString()
         activity.runOnUiThread {
             trigger(event, data)
+            webView?.let { wv ->
+                val escapedJson = JSONObject.quote(jsonStr)
+                val js = "(function(){ try { var d = JSON.parse($escapedJson); window.dispatchEvent(new CustomEvent('$event', { detail: d })); } catch(e){} })();"
+                wv.evaluateJavascript(js, null)
+            }
         }
     }
 
