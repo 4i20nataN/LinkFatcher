@@ -12,6 +12,27 @@ mod mobile_ytdlp;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  // [AFETA-DESKTOP] Aceleração de hardware do WebView (Linux/WebKitGTK):
+  // o WebKitGTK 2.42+ compõe na GPU por padrão (DMA-BUF), mas DUAS vars de
+  // ambiente forçam raster por software e anulam isso — herdadas de sessão,
+  // IDE ou launch script, elas explicam "60fps que nunca chega" mesmo com
+  // GPU livre. Remove-as do NOSSO processo antes do wry criar o WebView
+  // (leitura ocorre na criação do contexto; aqui ainda é cedo). WebView2
+  // (Windows) já é GPU por padrão — nada a fazer lá. Se o driver não tiver
+  // GL (VM, NVIDIA+X11 legado), o fallback continua sendo o perfil
+  // 'efficient' do frontend (renderProfile.ts) — sem placebo: sem GPU real,
+  // sem 60fps grátis. Mitigação desktop: zero efeito funcional, só remove
+  // veto de composição; loga o que fez via eprintln.
+  #[cfg(target_os = "linux")]
+  {
+    for var in ["WEBKIT_DISABLE_COMPOSITING_MODE", "LIBGL_ALWAYS_SOFTWARE"] {
+      if std::env::var_os(var).is_some() {
+        std::env::remove_var(var);
+        eprintln!("[hw-accel] removido veto de software: {var}=* (GPU liberada)");
+      }
+    }
+  }
+
   #[allow(unused_mut)]
   let mut builder = tauri::Builder::default();
 
