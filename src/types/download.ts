@@ -45,6 +45,9 @@ export interface DownloadItem {
   status: 'queued' | 'downloading' | 'paused' | 'completed' | 'failed' | 'cancelled';
   /** Transiente (não é estado): ffmpeg cortando em silêncio após o download. */
   processing?: boolean;
+  /** Transiente: última atividade do yt-dlp sem % (fragmento/retry/aviso).
+      Limpa no próximo progresso/conclusão; nunca persiste. */
+  activity?: string;
   addedAt: string;
   finishedAt?: string;
   url: string;

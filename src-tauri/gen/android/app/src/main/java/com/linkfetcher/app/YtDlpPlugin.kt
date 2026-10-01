@@ -355,6 +355,24 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val seen = mutableListOf<String>()
             var lastPercent = -1
             var processingSent = false
+            // Sinais de vida sem % (fragmentos DASH/HLS, retries, avisos do
+            // extrator): sem eles a UI congela em 0% por minutos num stall
+            // real — o usuário chama de "bugado". Throttle de 3s; o engine
+            // limpa no próximo progresso/conclusão.
+            var lastActivityMs = 0L
+            fun emitActivity(kind: String, a: Int = -1, b: Int = -1, text: String? = null) {
+                val now = System.currentTimeMillis()
+                if (now - lastActivityMs < 3_000) return
+                lastActivityMs = now
+                emitOnUi("yt-dlp-progress") {
+                    put("id", args.processId)
+                    put("type", "activity")
+                    put("kind", kind)
+                    if (a >= 0) put("current", a)
+                    if (b >= 0) put("total", b)
+                    if (text != null) put("text", text.take(140))
+                }
+            }
             try {
                 activeJobs[args.processId] = startMs
                 // Retry reusa o id: limpa desfecho da tentativa anterior para
@@ -392,6 +410,13 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                                 put("total", p.total)
                             }
                             showDlProgress(args.processId, args.title, p.percent.toInt())
+                        }
+                    } ?: parseActivity(line)?.let { a ->
+                        // Linha sem % mas com informação (fragmento/retry/aviso).
+                        when (a) {
+                            is ActivitySignal.Fragment -> emitActivity("fragment", a.current, a.total)
+                            is ActivitySignal.Retry -> emitActivity("retry")
+                            is ActivitySignal.Line -> emitActivity("line", text = a.text)
                         }
                     }
                 }
@@ -1072,6 +1097,36 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             || t.startsWith("[EmbedSubtitle]")
             || t.startsWith("[Metadata]")
             || t.startsWith("[ThumbnailsConvertor]")
+    }
+
+    // Sinais de vida sem % (só avaliado quando parseProgress falha): o
+    // engine exibe como atividade ("Fragmento 12/120", "Tentando de novo…")
+    // em vez de 0% morto. Nunca duplica: postprocessor/destination passam
+    // por aqui e não casam nenhum padrão.
+    private sealed interface ActivitySignal {
+        data class Fragment(val current: Int, val total: Int) : ActivitySignal
+        object Retry : ActivitySignal
+        data class Line(val text: String) : ActivitySignal
+    }
+
+    private val fragmentRegex =
+        """\[download\]\s+Downloading fragment (\d+) of (\d+)""".toRegex()
+
+    private fun parseActivity(line: String): ActivitySignal? {
+        val t = line.trim()
+        if (t.isEmpty()) return null
+        fragmentRegex.find(t)?.let {
+            val c = it.groupValues[1].toIntOrNull()
+            val n = it.groupValues[2].toIntOrNull()
+            if (c != null && n != null) return ActivitySignal.Fragment(c, n)
+        }
+        if (t.contains("Retrying", ignoreCase = true) || t.contains("Got error", ignoreCase = true)) {
+            return ActivitySignal.Retry
+        }
+        if (t.startsWith("WARNING") || t.startsWith("ERROR")) {
+            return ActivitySignal.Line(t)
+        }
+        return null
     }
 
     private fun newestFile(known: String?): String? {

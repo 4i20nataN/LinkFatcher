@@ -255,7 +255,11 @@ const DownloadCard = React.memo(function DownloadCard({
                         </span>
 
                         <div className="flex gap-3 shrink-0">
-                          {isDownloading && (isCutSilent ? (
+                          {isDownloading && (item.activity ? (
+                            <span className="lf-text-secondary animate-pulse" title={item.activity}>
+                              {item.activity}
+                            </span>
+                          ) : isCutSilent ? (
                             <span className="lf-text-secondary animate-pulse">
                               {item.processing
                                 ? (settings.language === 'en' ? 'Processing cut…' : 'Processando corte…')

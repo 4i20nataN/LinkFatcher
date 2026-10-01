@@ -25,6 +25,19 @@ function withRateLimitHint(msg: string, lang: string): string {
   return msg;
 }
 
+// Texto da atividade sem % (fragmento/retry/aviso do extrator): prova de
+// vida enquanto o yt-dlp não imprime progresso — sem isso a UI congela em
+// 0% e parece bugada num stall real. Limpa no próximo progresso.
+function formatActivityMessage(data: any, lang: string): string {
+  const en = lang === 'en';
+  if (data.kind === 'fragment' && typeof data.current === 'number' && typeof data.total === 'number') {
+    return en ? `Fragment ${data.current}/${data.total}` : `Fragmento ${data.current}/${data.total}`;
+  }
+  if (data.kind === 'retry') return en ? 'Retrying…' : 'Tentando de novo…';
+  if (typeof data.text === 'string' && data.text) return data.text;
+  return en ? 'Working…' : 'Trabalhando…';
+}
+
 // Platforms that support real yt-dlp extraction
 const YT_DLP_PLATFORMS = new Set([
   'youtube', 'tiktok', 'instagram', 'facebook', 'x', 'reddit', 'soundcloud', 'twitch', 'vimeo'
@@ -78,12 +91,12 @@ class DownloadEngineClass {
       if (stored) {
         const parsed: DownloadItem[] = JSON.parse(stored);
         this.items = parsed.map(item => {
-          // `processing` é transiente (fase do ffmpeg) — nunca sobrevive reload.
+          // `processing`/`activity` são transientes — nunca sobrevivem reload.
           // Reset in-progress downloads to queued on reload
           if (item.status === 'downloading') {
-            return { ...item, status: 'paused', speed: 0, eta: 0, processing: false };
+            return { ...item, status: 'paused', speed: 0, eta: 0, processing: false, activity: undefined };
           }
-          return { ...item, processing: false };
+          return { ...item, processing: false, activity: undefined };
         });
       }
     } catch (e) {
@@ -111,7 +124,7 @@ class DownloadEngineClass {
       const active = this.items.filter(i => ['queued', 'downloading', 'paused'].includes(i.status));
       const finished = this.items.filter(i => !['queued', 'downloading', 'paused'].includes(i.status));
       const trimmedFinished = finished.slice(0, DownloadEngineClass.MAX_PERSISTED_FINISHED);
-      const toPersist = [...active, ...trimmedFinished];
+      const toPersist = [...active, ...trimmedFinished].map(({ activity: _a, ...rest }) => rest);
       localStorage.setItem('universal_downloader_items', JSON.stringify(toPersist));
     } catch (e) {
       console.error('Error saving engine state', e);
@@ -491,6 +504,7 @@ class DownloadEngineClass {
           const rawSpeed = parseFloat(data.speed) || 0;
           item.speed = rawSpeed <= 0 || item.speed <= 0 ? rawSpeed : item.speed + 0.4 * (rawSpeed - item.speed);
           item.eta = parseFloat(data.eta) || 0;
+          item.activity = undefined;
           if (data.downloaded && data.downloaded > 0) {
             item.sizeDownloaded = data.downloaded;
           }
@@ -514,6 +528,12 @@ class DownloadEngineClass {
             item.eta = 0;
             this.touch(item.id);
             this.notify();
+          }
+        } else if (data.type === 'activity') {
+          if (item.status === 'downloading') {
+            item.activity = formatActivityMessage(data, this.settings.language);
+            this.touch(item.id);
+            this.notify(false);
           }
         } else if (data.type === 'complete') {
           if (item.status === 'paused' || item.status === 'cancelled') {
