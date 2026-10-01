@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/logo-dark.png" alt="LinkFetcher" width="160" />
+  <img src="public/logo-dark.webp" alt="LinkFetcher" width="160" />
 </p>
 
 <h1 align="center">LinkFetcher</h1>
