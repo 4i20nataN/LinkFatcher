@@ -131,6 +131,16 @@ class DownloadEngineClass {
     this.saveState(persist);
   }
 
+  // Troca a referência do item (update imutável): a UI memoiza cards por
+  // identidade (`prev.item === next.item`) e pula re-render de quem não
+  // mudou — sem isso, cada tick de progresso re-renderiza a lista inteira
+  // (mutação in-place mantém a ref e o memo nunca dispara). Chamar em todo
+  // ponto que muta um item antes do notify.
+  private touch(id: string) {
+    const i = this.items.findIndex(x => x.id === id);
+    if (i >= 0) this.items[i] = { ...this.items[i] };
+  }
+
   addDownload(media: MediaInfo, format: MediaFormat, formatOptions?: FormatOptions | null) {
     // Repetidos permitidos: sufixo (1), (2)... no nome para não sobrescrever
     // o arquivo no disco (o yt-dlp sobrescreveria silenciosamente) nem colocar
@@ -233,6 +243,7 @@ class DownloadEngineClass {
     item.speed = 0;
     item.eta = 0;
     item.processing = false;
+    this.touch(id);
     this.notify();
   }
 
@@ -242,6 +253,7 @@ class DownloadEngineClass {
 
     item.status = 'queued';
     item.processing = false;
+    this.touch(id);
     this.notify();
     this.processQueue();
   }
@@ -270,6 +282,7 @@ class DownloadEngineClass {
     item.speed = 0;
     item.eta = 0;
     item.processing = false;
+    this.touch(id);
     this.notify();
   }
 
@@ -350,6 +363,7 @@ class DownloadEngineClass {
     item.processing = false;
     item.error = undefined;
     item.subWarning = undefined;
+    this.touch(id);
     this.notify();
     this.processQueue();
   }
@@ -392,6 +406,7 @@ class DownloadEngineClass {
 
   private async startDownload(item: DownloadItem) {
     item.status = 'downloading';
+    this.touch(item.id);
     this.notify();
 
     // Desktop Tauri é o único transporte (web/mobile removidos).
@@ -399,6 +414,7 @@ class DownloadEngineClass {
     if (!isTauri) {
       item.status = 'failed';
       item.error = 'Download disponível apenas no app desktop';
+      this.touch(item.id);
       this.notify();
       return;
     }
@@ -480,6 +496,7 @@ class DownloadEngineClass {
           const throttleMs = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent) ? 500 : 250;
           if (now - (this.lastProgressNotify.get(item.id) ?? 0) >= throttleMs) {
             this.lastProgressNotify.set(item.id, now);
+            this.touch(item.id);
             this.notify(false);
           }
         } else if (data.type === 'processing') {
@@ -487,6 +504,7 @@ class DownloadEngineClass {
             item.processing = true;
             item.speed = 0;
             item.eta = 0;
+            this.touch(item.id);
             this.notify();
           }
         } else if (data.type === 'complete') {
@@ -513,6 +531,7 @@ class DownloadEngineClass {
           this.cancelFns.delete(item.id);
           this.lastProgressNotify.delete(item.id);
           finish();
+          this.touch(item.id);
           this.notify();
         } else if (data.type === 'error') {
           if (item.status === 'paused' || item.status === 'cancelled') {
@@ -530,6 +549,7 @@ class DownloadEngineClass {
           this.cancelFns.delete(item.id);
           this.lastProgressNotify.delete(item.id);
           finish();
+          this.touch(item.id);
           this.notify();
         }
       };
@@ -569,6 +589,7 @@ class DownloadEngineClass {
         item.filePath = resultPath;
         item.finishedAt = new Date().toISOString();
         this.cancelFns.delete(item.id);
+        this.touch(item.id);
         this.notify();
       }
     } catch (error: any) {
@@ -578,6 +599,7 @@ class DownloadEngineClass {
         item.processing = false;
         this.cancelFns.delete(item.id);
         this.lastProgressNotify.delete(item.id);
+        this.touch(item.id);
         this.notify();
         return;
       }
@@ -586,6 +608,7 @@ class DownloadEngineClass {
       item.error = withRateLimitHint(adapterErrorMessage(error, 'Download failed'), this.settings.language);
       this.cancelFns.delete(item.id);
       this.lastProgressNotify.delete(item.id);
+      this.touch(item.id);
       this.notify();
     }
   }
