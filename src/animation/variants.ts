@@ -90,11 +90,6 @@ export const accordionExpand: Variants = {
   exit: { height: 0, opacity: 0 },
 };
 
-/** Chevron rotation (0→180deg) */
-export const chevronRotate = (isOpen: boolean): { rotate: number } => ({
-  rotate: isOpen ? 180 : 0,
-});
-
 /** Update banner entry (y: -12→0, subtle scale) */
 export const bannerEntry: Variants = {
   hidden: { opacity: 0, y: -12, scale: 0.98 },

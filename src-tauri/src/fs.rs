@@ -73,12 +73,6 @@ fn forget_download_paths(id: &str) -> Option<Vec<String>> {
     LAST_PATHS.lock().unwrap().remove(id)
 }
 
-/// Inicializar mapa via `tauri::State` (opcional, LazyLock já inicializa).
-#[allow(dead_code)]
-pub fn init_cancel_map(_state: std::sync::Mutex<CancelMap>) {
-    // já inicializado via LazyLock; mantido para compat
-}
-
 /// Retorna o diretório de downloads do SO. Paridade `main.cjs:203`.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
@@ -271,17 +265,6 @@ fn write_description_file(
         "filePath": file_path.to_string_lossy(),
         "dir": downloads.to_string_lossy(),
     }))
-}
-
-/// `fs:stat` — retorna tamanho do arquivo.
-/// Paridade `main.cjs:235-242`.
-#[tauri::command]
-pub async fn fs_stat(file_path: String) -> Result<serde_json::Value, String> {
-    let path = PathBuf::from(file_path.trim().trim_matches(|c| c == '\'' || c == '"'));
-    match std::fs::metadata(&path) {
-        Ok(meta) => Ok(serde_json::json!({ "size": meta.len() })),
-        Err(_) => Ok(serde_json::json!({ "size": 0 })),
-    }
 }
 
 /// Extensão pela content-type (`image/jpeg; charset=x` → `jpg`).

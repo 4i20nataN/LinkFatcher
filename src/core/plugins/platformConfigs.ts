@@ -102,10 +102,6 @@ export const PLATFORM_REGISTRY: PlatformConfig[] = [
   },
 ];
 
-export function getPlatformConfig(id: PlatformId): PlatformConfig {
-  return PLATFORM_REGISTRY.find(p => p.id === id) || PLATFORM_REGISTRY.find(p => p.id === 'generic')!;
-}
-
 export function matchPlatformForUrl(url: string): PlatformConfig | null {
   return PLATFORM_REGISTRY.find(p => p.patterns.some(rx => rx.test(url))) || null;
 }

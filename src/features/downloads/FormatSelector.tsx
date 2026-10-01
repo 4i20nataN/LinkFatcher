@@ -10,7 +10,7 @@ import { AnimatedList } from '../../animation/AnimatedList';
 import { AnimatedAccordion } from '../../animation/AnimatedAccordion';
 import { AnimatedButton } from '../../animation/AnimatedButton';
 import { TabIndicator, LayoutGroup } from '../../animation/TabIndicator';
-import { chevronRotate, slideUp, scaleIn, fadeIn, transitions } from '../../animation/variants';
+import { slideUp, scaleIn, transitions } from '../../animation/variants';
 import { ChevronDown, ChevronUp, Info, ArrowDownToLine, AlertTriangle, FileText, Download, X, Subtitles } from 'lucide-react';
 import { AUDIO_QUALITY_PRESETS } from './constants';
 
@@ -21,7 +21,6 @@ interface FormatSelectorProps {
   formatOptions?: FormatOptions;
 }
 
-export type { FormatOptions } from './FormatOptions';
 import type { FormatOptions } from './FormatOptions';
 
 const VIDEO_PRESETS = [

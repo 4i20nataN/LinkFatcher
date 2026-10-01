@@ -66,7 +66,6 @@ pub fn run() {
       fs::fs_select_folder,
       fs::fs_save_description,
       fs::fs_fetch_cover,
-      fs::fs_stat,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

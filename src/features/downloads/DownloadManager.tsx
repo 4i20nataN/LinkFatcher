@@ -1,23 +1,21 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { DownloadItem, AppSettings } from '../../types';
+import { DownloadItem } from '../../types';
 import { DownloadEngine } from '../../core/engine/DownloadEngine';
 import { buildArgsPreview } from '../../core/ytdlp/buildArgsPreview';
 import { 
   Play, Pause, X, Trash2, FolderOpen, Share2, RotateCcw, 
-  ArrowUp, ArrowDown, ListOrdered, CheckCircle2, AlertTriangle, 
-  Clock, TrendingUp, HelpCircle, ShieldCheck, ChevronRight,
+  ArrowUp, ArrowDown, CheckCircle2, AlertTriangle, 
+  Clock, TrendingUp, ShieldCheck,
   Subtitles, Scissors, Shield, Tag, Code
 } from 'lucide-react';
 import { AnimatedCard } from '../../animation/AnimatedCard';
 import { AnimatedList } from '../../animation/AnimatedList';
-import { AnimatedToast } from '../../animation/AnimatedToast';
-import { AnimatedModal } from '../../animation/AnimatedModal';
 import { TabIndicator, LayoutGroup } from '../../animation/TabIndicator';
-import { slideUp, slideExitLeft, scaleIn, fadeIn, transitions } from '../../animation/variants';
+import { slideExitLeft, scaleIn, fadeIn, transitions } from '../../animation/variants';
 import { useTranslation } from '../../core/i18n';
 import { 
-  getAccentBgClass, getAccentTextClass, getAccentBorderClass 
+  getAccentBgClass, getAccentTextClass 
 } from '../../components/ThemeWrapper';
 import { ProviderRegistry } from '../../core/plugins/Providers';
 import { PlatformBadge } from '../../components/PlatformBadge';

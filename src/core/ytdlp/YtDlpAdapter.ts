@@ -42,50 +42,6 @@ function isAndroid(): boolean {
 
 export { isAndroid };
 
-export const YtDlpAdapter = {
-  async probe(url: string, options?: any) {
-    if (isTauri()) {
-      // No Android os comandos Rust (`ytdlp_probe`, ...) encaminham ao
-      // yt-dlp embarcado via plugin Kotlin — mesmo transporte do desktop.
-      return callTauri('ytdlp_probe', { url, ...options });
-    }
-    if (isElectron()) {
-      return (window as any).electron.invoke('yt-dlp-probe', { url, ...options });
-    }
-    throw new Error('No transport available (requires app)');
-  },
-
-  async search(query: string, platform = 'youtube', maxResults = 10, options?: any) {
-    if (isTauri()) {
-      return callTauri('ytdlp_search', { query, platform, maxResults, ...options });
-    }
-    if (isElectron()) {
-      return (window as any).electron.invoke('yt-dlp-search', { query, platform, maxResults, ...options });
-    }
-    throw new Error('No transport available (requires app)');
-  },
-
-  async download(params: any) {
-    if (isTauri()) {
-      return callTauri('ytdlp_download', params);
-    }
-    if (isElectron()) {
-      return (window as any).electron.invoke('yt-dlp-download', params);
-    }
-    throw new Error('No transport available (requires app)');
-  },
-
-  async cancel(id: string) {
-    if (isTauri()) {
-      return callTauri('ytdlp_cancel', { id });
-    }
-    if (isElectron()) {
-      return (window as any).electron.invoke('yt-dlp-cancel', id);
-    }
-    throw new Error('No transport available (requires app)');
-  },
-};
-
 // Cache em memória do dump-json por URL: re-analisar o mesmo link (retry,
 // voltar de tela, clipboard) não paga outra extração — no yt-dlp embarcado
 // do Android cada probe custa segundos em aparelho fraco. TTL curto: o
@@ -144,9 +100,9 @@ export async function searchVideosWithAdapter(options: SearchOptions): Promise<S
   throw new Error('No transport available (requires app)');
 }
 
-export async function getYtDlpStatusWithAdapter(): Promise<{ ready: boolean; binaryPath?: string; version?: string }> {
+export async function getYtDlpStatusWithAdapter(): Promise<{ ready: boolean; binaryPath?: string; version?: string; missing?: string[] }> {
   if (isTauri()) {
-    return callTauri<{ ready: boolean; binaryPath?: string; version?: string }>('ytdlp_status');
+    return callTauri<{ ready: boolean; binaryPath?: string; version?: string; missing?: string[] }>('ytdlp_status');
   }
   // Electron: use IPC bridge
   if (isElectron()) {

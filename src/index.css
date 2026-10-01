@@ -111,10 +111,6 @@
   font-size: calc((9.6 + var(--ui-scale, 50) * 0.144) * 1px);
 }
 
-.fs-md {
-  font-size: calc((10.8 + var(--ui-scale, 50) * 0.168) * 1px);
-}
-
 .fs-lg {
   font-size: calc((12 + var(--ui-scale, 50) * 0.192) * 1px);
 }
@@ -179,10 +175,6 @@ body {
   padding-top: env(safe-area-inset-top, 0px);
 }
 
-.safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-
 body {
   font-family: var(--font-sans);
   overflow-x: hidden;
@@ -203,9 +195,7 @@ body {
 }
 
 /* Focus states for custom interactive components */
-.lf-btn-outline:focus-visible,
 .lf-opt:focus-visible,
-.lf-nav-item:focus-visible,
 .tag:focus-visible {
   outline: 2px solid var(--color-primary, #6366f1);
   outline-offset: 2px;
@@ -232,41 +222,7 @@ body {
   from { opacity: 0; transform: translateY(15px); }
   to { opacity: 1; transform: translateY(0); }
 }
-@keyframes lf-css-slide-exit {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-15px); }
-}
 .lf-css-enter { animation: lf-css-slide-enter 0.25s ease-out both; }
-.lf-css-exit { animation: lf-css-slide-exit 0.2s ease-in both; }
-
-/* Ambient Accent Overlay — subtle colored glow for tone inclination (reference: bg-glow-container) */
-.ambient-accent-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 5;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.ambient-accent-overlay::before {
-  content: "";
-  position: absolute;
-  inset: -20%;
-  background:
-    radial-gradient(circle at 15% 25%, rgba(var(--color-primary-rgb, 99, 102, 241), 0.05) 0%, rgba(var(--color-primary-rgb, 99, 102, 241), 0.008) 40%, transparent 70%),
-    radial-gradient(circle at 85% 75%, rgba(var(--color-primary-rgb, 99, 102, 241), 0.06) 0%, rgba(var(--color-primary-rgb, 99, 102, 241), 0.008) 45%, transparent 75%);
-  animation: ambientDrift 28s ease-in-out infinite alternate;
-}
-
-@keyframes ambientDrift {
-  0% {
-    transform: scale(1) rotate(0deg);
-  }
-
-  100% {
-    transform: scale(1.08) rotate(2deg);
-  }
-}
 
 /* Body background — dark é tom estático fixo (não acompanha a cor de destaque) */
 .dark {
@@ -431,18 +387,6 @@ body {
   -webkit-backdrop-filter: blur(8px) saturate(150%);
 }
 
-.lf-surface-20 {
-  background-color: rgba(var(--lf-surface-rgb, 10, 14, 23) / 0.20);
-  backdrop-filter: blur(6px) saturate(140%);
-  -webkit-backdrop-filter: blur(6px) saturate(140%);
-}
-
-.lf-surface-10 {
-  background-color: rgba(var(--lf-surface-rgb, 10, 14, 23) / 0.10);
-  backdrop-filter: blur(4px) saturate(130%);
-  -webkit-backdrop-filter: blur(4px) saturate(130%);
-}
-
 /* Light mode: surface opacities (warm beige) */
 .light .lf-surface-40 {
   background-color: rgba(255, 252, 245, 0.92);
@@ -450,41 +394,6 @@ body {
 
 .light .lf-surface-30 {
   background-color: rgba(255, 252, 245, 0.85);
-}
-
-.light .lf-surface-20 {
-  background-color: rgba(255, 252, 245, 0.75);
-}
-
-.light .lf-surface-10 {
-  background-color: rgba(255, 252, 245, 0.32);
-}
-
-/* Text color context variants */
-.lf-text-white {
-  color: #fff;
-}
-
-.lf-text-dark {
-  color: #141821;
-}
-
-/* Hover states */
-.lf-surface-hover:hover {
-  background-color: rgba(255, 255, 255, 0.04);
-}
-
-.light .lf-surface-hover:hover {
-  background-color: rgba(0, 0, 0, 0.03);
-}
-
-.lf-border-hover:hover {
-  border-color: var(--lf-border-hover);
-}
-
-/* Interactive accent border shorthand */
-.lf-accent-border {
-  border-color: var(--color-primary);
 }
 
 /* Frosted Glass Utilities — Obsidian Glass Design System (reference-exact values) */
@@ -579,29 +488,6 @@ body {
   background: rgba(255, 255, 255, 0.22);
 }
 
-/* Buttons — outline with accent border + subtle fill on hover */
-.lf-btn-outline {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  color: var(--text-muted, #94a3b8);
-  transition: all 0.2s ease;
-}
-
-.lf-btn-outline:hover {
-  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.06);
-  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.20);
-  color: #fff;
-}
-
-.lf-btn-outline.primary {
-  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.30);
-  color: var(--color-primary, #6366f1);
-}
-
-.lf-btn-outline.primary:hover {
-  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.08);
-}
-
 /* Options/chips — subtle fill on hover, accent on active */
 .lf-opt {
   background: rgba(255, 255, 255, 0.02);
@@ -629,44 +515,12 @@ body {
   filter: brightness(0.95);
 }
 
-/* Nav items — accent fill on hover, stronger on active */
-.lf-nav-item {
-  transition: all 0.25s ease;
-}
-
-.lf-nav-item:hover {
-  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.05);
-  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.15);
-  color: #fff;
-}
-
-.lf-nav-item.active {
-  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.08);
-  color: var(--color-primary, #6366f1);
-  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.20);
-}
-
-.lf-nav-item.active svg {
-  color: var(--color-primary, #6366f1);
-}
-
 /* Checkboxes — accent check color */
 input[type="checkbox"] {
   accent-color: var(--color-primary, #6366f1);
 }
 
 /* Light mode accent overrides for interactive states */
-.light .lf-btn-outline:hover {
-  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.06);
-  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.25);
-  color: #141821;
-}
-
-.light .lf-btn-outline.primary {
-  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.35);
-  color: var(--color-primary, #6366f1);
-}
-
 .light .lf-opt:hover:not(.active) {
   background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.05);
   border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.20);
@@ -684,22 +538,6 @@ input[type="checkbox"] {
   background: var(--color-primary, #6366f1);
   color: #0F172A;
   filter: brightness(0.95);
-}
-
-.light .lf-nav-item:hover {
-  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.06);
-  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.18);
-  color: #141821;
-}
-
-.light .lf-nav-item.active {
-  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.10);
-  color: var(--color-primary, #6366f1);
-  border-color: rgba(var(--color-primary-rgb, 99, 102, 241), 0.25);
-}
-
-.light .lf-nav-item.active svg {
-  color: var(--color-primary, #6366f1);
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -1184,9 +1022,6 @@ input[type="checkbox"] {
    surfaces to keep 60fps responsiveness with zero CPU lag. */
 .efficient .glass-card,
 .efficient .glass-result,
-.efficient .glass-chip,
-.efficient .glass-dropdown,
-.efficient .glass-panel,
 .efficient .glass-sidebar,
 .efficient .glass-input,
 .efficient .glass-pill,
@@ -1383,84 +1218,6 @@ input[type="checkbox"] {
   --c: #629aa9;
 }
 
-/* ═══════════════════════════════════════════════════════ */
-/* PARTICLE BACKGROUND                                     */
-/* ═══════════════════════════════════════════════════════ */
-
-.particle {
-  position: absolute;
-  pointer-events: none;
-  filter: blur(1.5px);
-}
-
-.p-tiny {
-  width: 0.8px;
-  height: 0.8px;
-  opacity: 0.3;
-}
-
-.p-small {
-  width: 1.2px;
-  height: 1.2px;
-  opacity: 0.4;
-}
-
-.p-medium {
-  width: 2px;
-  height: 2px;
-  opacity: 0.5;
-}
-
-.p-large {
-  width: 3px;
-  height: 3px;
-  opacity: 0.6;
-}
-
-.p-xlarge {
-  width: 4px;
-  height: 4px;
-  opacity: 0.5;
-}
-
-@keyframes riseOrganic {
-  0% {
-    transform: translateY(20px) translateX(0) rotate(45deg);
-    opacity: 0;
-  }
-
-  8% {
-    opacity: inherit;
-  }
-
-  50% {
-    transform: translateY(-50vh) translateX(12px) rotate(45deg);
-  }
-
-  85% {
-    opacity: inherit;
-  }
-
-  100% {
-    transform: translateY(-105vh) translateX(-6px) rotate(45deg);
-    opacity: 0;
-  }
-}
-
-@keyframes colorShift {
-
-  0%,
-  100% {
-    background: #ff3a3a;
-    box-shadow: 0 0 14px 4px rgba(255, 58, 58, 0.6);
-  }
-
-  50% {
-    background: #4d5fff;
-    box-shadow: 0 0 14px 4px rgba(77, 95, 255, 0.6);
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════ */
 /* WHITE THEME — Visual Overrides                                                 */
 /* Solid white backgrounds, clean buttons, accent-driven active states            */
@@ -1514,8 +1271,6 @@ input[type="checkbox"] {
 /* ── Surface utility overrides — PURE WHITE ──────────────────────────── */
 .white .lf-surface-40,
 .white .lf-surface-30,
-.white .lf-surface-20,
-.white .lf-surface-10,
 .white .lf-surface-50,
 .white .lf-surface-raised {
   background-color: #FFFFFF;
@@ -1838,32 +1593,3 @@ input[type="checkbox"] {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
-/* ── Surface hover ────────────────────────────────────────────────────────── */
-.white .lf-surface-hover:hover {
-  background-color: rgba(240, 243, 248, 0.55);
-}
-
-/* ── Button utility overrides ─────────────────────────────────────────────── */
-.white .lf-btn-outline:hover {
-  background-color: rgba(240, 243, 248, 0.50);
-}
-.white .lf-btn-outline.primary {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-.white .lf-nav-item:hover {
-  background-color: rgba(240, 243, 248, 0.50);
-}
-.white .lf-nav-item.active {
-  background-color: rgba(var(--color-primary-rgb), 0.08);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-.white .lf-nav-item.active svg {
-  color: var(--color-primary);
-}
-
-@keyframes shimmer {
-  from { left: -10%; }
-  to { left: 110%; }
-}
