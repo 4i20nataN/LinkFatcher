@@ -1297,6 +1297,45 @@ pub async fn ytdlp_cancel(
     Ok(())
 }
 
+/// `ytdlp_job_state` no Android: reconciliação pós-background. O `trigger()`
+/// do Kotlin não enfileira — evento emitido com o WebView suspenso é
+/// descartado e o `complete` nunca chega ao JS (item trava em `downloading`
+/// com o arquivo já em disco). Retorna o JSON cru do Kotlin
+/// (`{state: running|finished|unknown, ...}`); `unknown` = sem registro e o
+/// engine NÃO age (seguro por padrão: nunca reinicia nada sozinho).
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn ytdlp_job_state(
+    app: AppHandle,
+    options: Option<serde_json::Value>,
+    params: Option<serde_json::Value>,
+    payload: Option<serde_json::Value>,
+    id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let resolved_id = if let Some(s) = id {
+        s
+    } else if let Some(ref opts) = options.or(params).or(payload) {
+        if let Some(s) = opts.as_str() {
+            s.to_owned()
+        } else if let Some(id_val) = opts.get("id").and_then(|v| v.as_str()) {
+            id_val.to_owned()
+        } else {
+            return Err("Nenhum ID fornecido para job_state".into());
+        }
+    } else {
+        return Err("Nenhum ID fornecido para job_state".into());
+    };
+    crate::mobile_ytdlp::job_state_mobile(&app, &resolved_id).await
+}
+
+/// `ytdlp_job_state` fora do Android: sem registro de jobs — o engine nem
+/// chama (reconciliação só no mobile), então erro explícito em vez de silêncio.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub async fn ytdlp_job_state() -> Result<serde_json::Value, String> {
+    Err("job_state suportado só no Android".into())
+}
+
 /// `ytdlp_cleanup` — apaga artefatos temporários de um download
 /// (`.part`, `.ytdl`, `.temp`, `.cuttmp.*`, fragmentos `-Frag*`).
 /// Aceita `{ id }` (usa os destinos rastreados da sessão), `{ filePath }`

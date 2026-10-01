@@ -83,6 +83,23 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         java.util.concurrent.LinkedBlockingQueue()
     )
     private val lastPaths = ConcurrentHashMap<String, String>()
+    // Jobs ativos (processId → início) + desfechos recentes: o `trigger()`
+    // não enfileira — evento emitido com o WebView suspenso (minimizar/sair)
+    // é descartado e o JS nunca recebe o `complete`, travando o item em
+    // `downloading` com o arquivo já em disco. `jobState` permite ao engine
+    // reconciliar na volta ao foreground sem reiniciar nada (reiniciar
+    // duplicaria o processo). A lib não expõe query não-destrutiva
+    // (só `destroyProcessById`), por isso o registro é nosso. `unknown` =
+    // sem registro: o frontend NÃO age — seguro por padrão.
+    private val activeJobs = ConcurrentHashMap<String, Long>()
+    private data class FinishedJob(val ok: Boolean, val filePath: String?, val size: Long, val error: String?, val at: Long)
+    private val finishedJobs = ConcurrentHashMap<String, FinishedJob>()
+    private fun rememberFinished(id: String, job: FinishedJob) {
+        finishedJobs[id] = job
+        if (finishedJobs.size > 100) {
+            finishedJobs.entries.minByOrNull { it.value.at }?.key?.let { finishedJobs.remove(it) }
+        }
+    }
     // Self-update do yt-dlp respeita o toggle da UI (default ligado).
     // Ajustado via comando `setUpdatesEnabled` no boot e ao trocar.
     @Volatile
@@ -339,6 +356,10 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             var lastPercent = -1
             var processingSent = false
             try {
+                activeJobs[args.processId] = startMs
+                // Retry reusa o id: limpa desfecho da tentativa anterior para
+                // um `finished` velho nunca reconciliar a nova execução.
+                finishedJobs.remove(args.processId)
                 val request = YoutubeDLRequest(emptyList<String>())
                 request.addCommands(args.argv)
                 val response = YoutubeDL.getInstance().execute(request, args.processId) { _, _, line ->
@@ -382,6 +403,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                         put("message", msg)
                     }
                     showDlError(args.processId, args.title, msg)
+                    rememberFinished(args.processId, FinishedJob(false, null, 0, msg, System.currentTimeMillis()))
                     invoke.reject(msg)
                     return@cmd
                 }
@@ -409,6 +431,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                         put("type", "error")
                         put("message", msg)
                     }
+                    rememberFinished(args.processId, FinishedJob(false, null, 0, msg, System.currentTimeMillis()))
                     invoke.reject(msg)
                     return@cmd
                 }
@@ -430,6 +453,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                     if (filtersNote != null) put("subWarning", filtersNote)
                 }
                 showDlComplete(args.processId, args.title, File(finalPath))
+                rememberFinished(args.processId, FinishedJob(true, finalPath, size, null, System.currentTimeMillis()))
                 invoke.resolve(JSObject().apply {
                     put("filePath", finalPath)
                     put("size", size)
@@ -445,7 +469,10 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                     put("message", msg)
                 }
                 showDlError(args.processId, args.title, msg)
+                rememberFinished(args.processId, FinishedJob(false, null, 0, msg, System.currentTimeMillis()))
                 invoke.reject(msg)
+            } finally {
+                activeJobs.remove(args.processId)
             }
         }
     }
@@ -465,6 +492,35 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve(JSObject().apply { put("success", killed) })
         } catch (e: Exception) {
             invoke.reject(e.message ?: "Erro ao cancelar")
+        }
+    }
+
+    // ---- jobState: reconciliação pós-background (ver activeJobs acima) ----
+    @Command
+    fun jobState(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(CancelArgs::class.java)
+            val id = args.id
+            if (id.isBlank()) {
+                invoke.reject("id vazio")
+                return
+            }
+            val res = JSObject()
+            val fin = finishedJobs[id]
+            when {
+                activeJobs.containsKey(id) -> res.put("state", "running")
+                fin != null -> {
+                    res.put("state", "finished")
+                    res.put("ok", fin.ok)
+                    if (fin.filePath != null) res.put("filePath", fin.filePath)
+                    res.put("size", fin.size)
+                    if (fin.error != null) res.put("error", fin.error)
+                }
+                else -> res.put("state", "unknown")
+            }
+            invoke.resolve(res)
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "jobState falhou")
         }
     }
 

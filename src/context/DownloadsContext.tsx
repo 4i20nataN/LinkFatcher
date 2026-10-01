@@ -61,8 +61,18 @@ export const DownloadsProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
     };
     DownloadEngine.addListener(handleUpdate);
+    // Volta ao foreground: reconcilia downloads cujo `complete` se perdeu
+    // com o WebView suspenso (travariam em `downloading` com arquivo em
+    // disco). Fire-and-forget; o engine filtra (só Android, só stale).
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        DownloadEngine.reconcileStuck().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       DownloadEngine.removeListener(handleUpdate);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 

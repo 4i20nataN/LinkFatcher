@@ -38,6 +38,12 @@ class DownloadEngineClass {
   private cancelFns = new Map<string, () => void>();
   // Throttle de renders: último notify de progresso por download (ms)
   private lastProgressNotify = new Map<string, number>();
+  // Último evento recebido por download: sem evento há muito tempo + volta
+  // ao foreground = `complete` perdido com WebView suspenso → reconcilia.
+  private lastEventAt = new Map<string, number>();
+  // Unlisten do `listen('yt-dlp-progress')` por download: desfecho aplicado
+  // via reconcile também precisa soltar o listener (senão vaza).
+  private unlistenFns = new Map<string, () => void>();
 
   private settings: AppSettings = {
     themeMode: 'dark',
@@ -406,6 +412,7 @@ class DownloadEngineClass {
 
   private async startDownload(item: DownloadItem) {
     item.status = 'downloading';
+    this.lastEventAt.set(item.id, Date.now());
     this.touch(item.id);
     this.notify();
 
@@ -477,6 +484,7 @@ class DownloadEngineClass {
       // Handler de progresso unificado (suporta listen do Tauri desktop e CustomEvent no Android)
       const handleProgressData = (data: any) => {
         if (!data || data.id !== item.id) return;
+        this.lastEventAt.set(item.id, Date.now());
 
         if (data.type === 'progress') {
           item.progress = typeof data.percent === 'number' ? data.percent : (parseFloat(data.percent) || 0);
@@ -530,6 +538,9 @@ class DownloadEngineClass {
           item.finishedAt = new Date().toISOString();
           this.cancelFns.delete(item.id);
           this.lastProgressNotify.delete(item.id);
+        this.lastEventAt.delete(item.id);
+        this.unlistenFns.get(item.id)?.();
+        this.unlistenFns.delete(item.id);
           finish();
           this.touch(item.id);
           this.notify();
@@ -548,6 +559,9 @@ class DownloadEngineClass {
           item.error = withRateLimitHint(data.message || 'Download failed', this.settings.language);
           this.cancelFns.delete(item.id);
           this.lastProgressNotify.delete(item.id);
+        this.lastEventAt.delete(item.id);
+        this.unlistenFns.get(item.id)?.();
+        this.unlistenFns.delete(item.id);
           finish();
           this.touch(item.id);
           this.notify();
@@ -559,11 +573,15 @@ class DownloadEngineClass {
       const unlisten = await listen('yt-dlp-progress', (event) => {
         handleProgressData(event.payload);
       });
+      this.unlistenFns.set(item.id, () => {
+        try { unlisten(); } catch { /* unlisten idempotente */ }
+      });
 
       let settled = false;
       const finish = () => {
         if (settled) return;
         settled = true;
+        this.unlistenFns.delete(item.id);
         try { unlisten(); } catch { /* unlisten idempotente */ }
       };
 
@@ -573,6 +591,9 @@ class DownloadEngineClass {
       this.cancelFns.set(item.id, () => {
         finish();
         this.lastProgressNotify.delete(item.id);
+        this.lastEventAt.delete(item.id);
+        this.unlistenFns.get(item.id)?.();
+        this.unlistenFns.delete(item.id);
         const args = item.status === 'cancelled'
           ? { id: item.id, cleanup: true }
           : { id: item.id };
@@ -589,6 +610,7 @@ class DownloadEngineClass {
         item.filePath = resultPath;
         item.finishedAt = new Date().toISOString();
         this.cancelFns.delete(item.id);
+        this.lastEventAt.delete(item.id);
         this.touch(item.id);
         this.notify();
       }
@@ -599,6 +621,9 @@ class DownloadEngineClass {
         item.processing = false;
         this.cancelFns.delete(item.id);
         this.lastProgressNotify.delete(item.id);
+        this.lastEventAt.delete(item.id);
+        this.unlistenFns.get(item.id)?.();
+        this.unlistenFns.delete(item.id);
         this.touch(item.id);
         this.notify();
         return;
@@ -608,6 +633,9 @@ class DownloadEngineClass {
       item.error = withRateLimitHint(adapterErrorMessage(error, 'Download failed'), this.settings.language);
       this.cancelFns.delete(item.id);
       this.lastProgressNotify.delete(item.id);
+      this.lastEventAt.delete(item.id);
+      this.unlistenFns.get(item.id)?.();
+      this.unlistenFns.delete(item.id);
       this.touch(item.id);
       this.notify();
     }
@@ -638,6 +666,65 @@ class DownloadEngineClass {
       this.fireCleanup(item.id, item.filePath);
     }
     this.notify();
+  }
+
+  // Reconciliação pós-background (Android): o `trigger()` do Kotlin não
+  // enfileira — evento emitido com o WebView suspenso (minimizar/sair) é
+  // descartado e o `complete` nunca chega: o item trava em `downloading`
+  // com o arquivo já em disco (sintoma: notificação "Concluído" + arquivo
+  // publicado, UI parada em 0%). Na volta ao foreground, pergunta o
+  // desfecho ao Kotlin (`ytdlp_job_state`) e aplica SEM reiniciar nada.
+  // Seguro por padrão: `running`/`unknown`/erro = não age (nunca duplica o
+  // processo); idempotente (só aplica se ainda estiver `downloading`).
+  async reconcileStuck() {
+    if (typeof navigator === 'undefined' || !/Android/i.test(navigator.userAgent)) return;
+    const STALE_MS = 20_000;
+    const now = Date.now();
+    const stale = this.items.filter(i =>
+      i.status === 'downloading' && (now - (this.lastEventAt.get(i.id) ?? 0)) >= STALE_MS
+    );
+    if (stale.length === 0) return;
+    let invokeFn: ((cmd: string, args?: unknown) => Promise<unknown>) | null = null;
+    try {
+      ({ invoke: invokeFn } = await import('@tauri-apps/api/core'));
+    } catch {
+      return;
+    }
+    for (const item of stale) {
+      let st: any = null;
+      try {
+        st = await invokeFn!('ytdlp_job_state', { id: item.id });
+      } catch {
+        continue;
+      }
+      if (!st || st.state !== 'finished') continue;
+      const cur = this.items.find(i => i.id === item.id);
+      if (!cur || cur.status !== 'downloading') continue;
+      if (st.ok && st.filePath) {
+        cur.status = 'completed';
+        cur.progress = 100;
+        cur.processing = false;
+        cur.filePath = st.filePath;
+        if (typeof st.size === 'number' && st.size > 0) {
+          cur.sizeTotal = st.size;
+          cur.sizeDownloaded = st.size;
+        }
+        cur.finishedAt = new Date().toISOString();
+      } else {
+        cur.status = 'failed';
+        cur.processing = false;
+        cur.error = typeof st.error === 'string' && st.error
+          ? st.error
+          : 'Download interrompido em segundo plano — toque para repetir';
+      }
+      this.cancelFns.delete(item.id);
+      this.lastProgressNotify.delete(item.id);
+      this.lastEventAt.delete(item.id);
+      this.unlistenFns.get(item.id)?.();
+      this.unlistenFns.delete(item.id);
+      this.touch(item.id);
+      this.notify();
+    }
   }
 
   // Progress helpers
