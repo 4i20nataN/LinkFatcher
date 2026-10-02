@@ -366,6 +366,12 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val seen = mutableListOf<String>()
             var lastPercent = -1
             var processingSent = false
+            // Teto de 2 eventos/s: sem ele, download rápido emite ~100
+            // updates (1 por ponto de %) × 2 transportes = tempestade de
+            // renders que afoga o WebView no armv7 (notificação nativa anda,
+            // card atrasa "um tempão"). % é sempre o valor atual — pular
+            // intermediários não perde informação.
+            var lastEmitMs = 0L
             // Sinais de vida sem % (fragmentos DASH/HLS, retries, avisos do
             // extrator): sem eles a UI congela em 0% por minutos num stall
             // real — o usuário chama de "bugado". Throttle de 3s; o engine
@@ -409,8 +415,10 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                         showDlProcessing(args.processId, args.title)
                     }
                     parseProgress(line)?.let { p ->
-                        if (p.percent.toInt() != lastPercent) {
+                        val nowMs = System.currentTimeMillis()
+                        if (p.percent.toInt() != lastPercent && (lastPercent == -1 || nowMs - lastEmitMs >= 500)) {
                             lastPercent = p.percent.toInt()
+                            lastEmitMs = nowMs
                             emitOnUi("yt-dlp-progress") {
                                 put("id", args.processId)
                                 put("type", "progress")

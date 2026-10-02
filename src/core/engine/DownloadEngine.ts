@@ -54,6 +54,11 @@ class DownloadEngineClass {
   // Último evento recebido por download: sem evento há muito tempo + volta
   // ao foreground = `complete` perdido com WebView suspenso → reconcilia.
   private lastEventAt = new Map<string, number>();
+  // Assinatura do último evento aplicado por download: o transporte é DUPLO
+  // (trigger + CustomEvent) e a duplicata chegava a dobrar os renders —
+  // no armv7 isso afogava o WebView (card minutos atrasado). Iguais seguidos
+  // não mudam nada visível: descarta.
+  private lastEventSig = new Map<string, string>();
   // Unlisten do `listen('yt-dlp-progress')` por download: desfecho aplicado
   // via reconcile também precisa soltar o listener (senão vaza).
   private unlistenFns = new Map<string, () => void>();
@@ -426,6 +431,7 @@ class DownloadEngineClass {
   private async startDownload(item: DownloadItem) {
     item.status = 'downloading';
     this.lastEventAt.set(item.id, Date.now());
+    this.lastEventSig.delete(item.id);
     this.touch(item.id);
     this.notify();
 
@@ -497,6 +503,13 @@ class DownloadEngineClass {
       // Handler de progresso unificado (suporta listen do Tauri desktop e CustomEvent no Android)
       const handleProgressData = (data: any) => {
         if (!data || data.id !== item.id) return;
+        const sig = [
+          data.type, data.percent, data.downloaded, data.total,
+          data.speed, data.eta, data.filePath, data.message, data.kind,
+          data.current, data.text,
+        ].join('|');
+        if (this.lastEventSig.get(item.id) === sig) return;
+        this.lastEventSig.set(item.id, sig);
         this.lastEventAt.set(item.id, Date.now());
 
         if (data.type === 'progress') {
@@ -559,6 +572,7 @@ class DownloadEngineClass {
           this.cancelFns.delete(item.id);
           this.lastProgressNotify.delete(item.id);
         this.lastEventAt.delete(item.id);
+        this.lastEventSig.delete(item.id);
         this.unlistenFns.get(item.id)?.();
         this.unlistenFns.delete(item.id);
           finish();
@@ -580,6 +594,7 @@ class DownloadEngineClass {
           this.cancelFns.delete(item.id);
           this.lastProgressNotify.delete(item.id);
         this.lastEventAt.delete(item.id);
+        this.lastEventSig.delete(item.id);
         this.unlistenFns.get(item.id)?.();
         this.unlistenFns.delete(item.id);
           finish();
@@ -624,6 +639,7 @@ class DownloadEngineClass {
         finish();
         this.lastProgressNotify.delete(item.id);
         this.lastEventAt.delete(item.id);
+        this.lastEventSig.delete(item.id);
         this.unlistenFns.get(item.id)?.();
         this.unlistenFns.delete(item.id);
         const args = item.status === 'cancelled'
@@ -643,6 +659,7 @@ class DownloadEngineClass {
         item.finishedAt = new Date().toISOString();
         this.cancelFns.delete(item.id);
         this.lastEventAt.delete(item.id);
+        this.lastEventSig.delete(item.id);
         this.touch(item.id);
         this.notify();
       }
@@ -654,6 +671,7 @@ class DownloadEngineClass {
         this.cancelFns.delete(item.id);
         this.lastProgressNotify.delete(item.id);
         this.lastEventAt.delete(item.id);
+        this.lastEventSig.delete(item.id);
         this.unlistenFns.get(item.id)?.();
         this.unlistenFns.delete(item.id);
         this.touch(item.id);
@@ -666,6 +684,7 @@ class DownloadEngineClass {
       this.cancelFns.delete(item.id);
       this.lastProgressNotify.delete(item.id);
       this.lastEventAt.delete(item.id);
+      this.lastEventSig.delete(item.id);
       this.unlistenFns.get(item.id)?.();
       this.unlistenFns.delete(item.id);
       this.touch(item.id);
@@ -752,6 +771,7 @@ class DownloadEngineClass {
       this.cancelFns.delete(item.id);
       this.lastProgressNotify.delete(item.id);
       this.lastEventAt.delete(item.id);
+      this.lastEventSig.delete(item.id);
       this.unlistenFns.get(item.id)?.();
       this.unlistenFns.delete(item.id);
       this.touch(item.id);
