@@ -24,12 +24,27 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     ndk {
-        abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64"))
+        // Corte de peso (2026-10-01, meta APK ≤120MB): só ABIs físicas.
+        // x86/x86_64 = emulador + Chromebook. NÃO é splits (enterrado em
+        // 2026-09-30: IncrementalSplitterRunnable × useLegacyPackaging, e o
+        // split que empacotou saiu com o mesmo peso). Este filtro é intenção
+        // + fallback; a EXECUÇÃO está no `packaging.jniLibs.excludes` abaixo
+        // (medido: abiFilters sozinho não filtra neste projeto). Caminho de
+        // volta se um dia importar: flavors per-ABI (plano item #2:
+        // LinkFetcher-<abi>.apk, updater já tem fallback).
+        abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
     }
     }
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            // Corte de peso (2026-10-01, meta download ≤120MB): x86/x86_64
+            // = emulador/Chromebook. ATENÇÃO: `ndk.abiFilters` (defaultConfig
+            // acima + flavors do RustPlugin) NÃO filtra neste projeto —
+            // medido nos intermediates: até flavors per-arch de 1 ABI
+            // (armDebug, x86_64Debug) mesclam as 4 ABIs. O que vale é este
+            // excludes, aplicado no packaging final, incondicional.
+            excludes += setOf("lib/x86/*", "lib/x86_64/*")
         }
     }
     signingConfigs {
@@ -58,8 +73,6 @@ android {
             packaging {
                 jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
                 jniLibs.keepDebugSymbols.add("*/armeabi-v7a/*.so")
-                jniLibs.keepDebugSymbols.add("*/x86/*.so")
-                jniLibs.keepDebugSymbols.add("*/x86_64/*.so")
             }
         }
         getByName("release") {

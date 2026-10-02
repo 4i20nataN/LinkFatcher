@@ -28,18 +28,18 @@ const THEME_CLASSES: Record<string, string> = {
 };
 
 const THEME_BACKGROUNDS: Record<string, string> = {
-  light: '/background-bege.png',
-  dark: '/background-escuro.png',
-  gray: '/background-cinza.png',
-  white: '/background-branco.png',
+  light: '/background-bege.webp',
+  dark: '/background-escuro.webp',
+  gray: '/background-cinza.webp',
+  white: '/background-branco.webp',
 };
 
 // Logo por tema (sidebar + telas principais).
 const THEME_LOGOS: Record<string, string> = {
-  light: '/logo-light.png',
-  dark: '/logo-dark.png',
-  gray: '/logo-gray.png',
-  white: '/logo-white.png',
+  light: '/logo-light.webp',
+  dark: '/logo-dark.webp',
+  gray: '/logo-gray.webp',
+  white: '/logo-white.webp',
 };
 
 export function getThemeLogo(settings: { themeMode: string }): string {

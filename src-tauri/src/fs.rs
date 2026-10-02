@@ -73,12 +73,6 @@ fn forget_download_paths(id: &str) -> Option<Vec<String>> {
     LAST_PATHS.lock().unwrap().remove(id)
 }
 
-/// Inicializar mapa via `tauri::State` (opcional, LazyLock já inicializa).
-#[allow(dead_code)]
-pub fn init_cancel_map(_state: std::sync::Mutex<CancelMap>) {
-    // já inicializado via LazyLock; mantido para compat
-}
-
 /// Retorna o diretório de downloads do SO. Paridade `main.cjs:203`.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
@@ -271,17 +265,6 @@ fn write_description_file(
         "filePath": file_path.to_string_lossy(),
         "dir": downloads.to_string_lossy(),
     }))
-}
-
-/// `fs:stat` — retorna tamanho do arquivo.
-/// Paridade `main.cjs:235-242`.
-#[tauri::command]
-pub async fn fs_stat(file_path: String) -> Result<serde_json::Value, String> {
-    let path = PathBuf::from(file_path.trim().trim_matches(|c| c == '\'' || c == '"'));
-    match std::fs::metadata(&path) {
-        Ok(meta) => Ok(serde_json::json!({ "size": meta.len() })),
-        Err(_) => Ok(serde_json::json!({ "size": 0 })),
-    }
 }
 
 /// Extensão pela content-type (`image/jpeg; charset=x` → `jpg`).
@@ -1312,6 +1295,79 @@ pub async fn ytdlp_cancel(
         eprintln!("[ytdlp_cancel:android] Nothing running for id={}", resolved_id);
     }
     Ok(())
+}
+
+/// `ytdlp_job_state` no Android: reconciliação pós-background. O `trigger()`
+/// do Kotlin não enfileira — evento emitido com o WebView suspenso é
+/// descartado e o `complete` nunca chega ao JS (item trava em `downloading`
+/// com o arquivo já em disco). Retorna o JSON cru do Kotlin
+/// (`{state: running|finished|unknown, ...}`); `unknown` = sem registro e o
+/// engine NÃO age (seguro por padrão: nunca reinicia nada sozinho).
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn ytdlp_job_state(
+    app: AppHandle,
+    options: Option<serde_json::Value>,
+    params: Option<serde_json::Value>,
+    payload: Option<serde_json::Value>,
+    id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let resolved_id = if let Some(s) = id {
+        s
+    } else if let Some(ref opts) = options.or(params).or(payload) {
+        if let Some(s) = opts.as_str() {
+            s.to_owned()
+        } else if let Some(id_val) = opts.get("id").and_then(|v| v.as_str()) {
+            id_val.to_owned()
+        } else {
+            return Err("Nenhum ID fornecido para job_state".into());
+        }
+    } else {
+        return Err("Nenhum ID fornecido para job_state".into());
+    };
+    crate::mobile_ytdlp::job_state_mobile(&app, &resolved_id).await
+}
+
+/// `ytdlp_job_state` fora do Android: sem registro de jobs — o engine nem
+/// chama (reconciliação só no mobile), então erro explícito em vez de silêncio.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub async fn ytdlp_job_state() -> Result<serde_json::Value, String> {
+    Err("job_state suportado só no Android".into())
+}
+
+/// `ytdlp_job_progress` no Android: snapshot do progresso de um job ativo
+/// p/ o poll de segurança do engine (push pode falhar nos dois transportes).
+/// Fora do Android: erro explícito.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn ytdlp_job_progress(
+    app: AppHandle,
+    options: Option<serde_json::Value>,
+    params: Option<serde_json::Value>,
+    payload: Option<serde_json::Value>,
+    id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let resolved_id = if let Some(s) = id {
+        s
+    } else if let Some(ref opts) = options.or(params).or(payload) {
+        if let Some(s) = opts.as_str() {
+            s.to_owned()
+        } else if let Some(id_val) = opts.get("id").and_then(|v| v.as_str()) {
+            id_val.to_owned()
+        } else {
+            return Err("Nenhum ID fornecido para job_progress".into());
+        }
+    } else {
+        return Err("Nenhum ID fornecido para job_progress".into());
+    };
+    crate::mobile_ytdlp::job_progress_mobile(&app, &resolved_id).await
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub async fn ytdlp_job_progress() -> Result<serde_json::Value, String> {
+    Err("job_progress suportado só no Android".into())
 }
 
 /// `ytdlp_cleanup` — apaga artefatos temporários de um download

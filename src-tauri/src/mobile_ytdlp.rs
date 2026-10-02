@@ -90,7 +90,26 @@ mod inner {
         .await?;
         Ok(r.success)
     }
+
+    /// Desfecho de um job no Kotlin (`jobState`): reconciliação quando o
+    /// `complete` se perdeu com o WebView suspenso. Retorna o JSON cru
+    /// (`{state: running|finished|unknown, ...}`) — o engine interpreta.
+    pub async fn job_state_mobile<R: Runtime>(
+        app: &AppHandle<R>,
+        id: &str,
+    ) -> Result<serde_json::Value, String> {
+        call_mobile(app, "jobState", &serde_json::json!({ "id": id })).await
+    }
+
+    /// Snapshot do progresso de um job ativo (`jobProgress`): poll de
+    /// segurança do engine (push pode falhar). `{active: bool, ...}`.
+    pub async fn job_progress_mobile<R: Runtime>(
+        app: &AppHandle<R>,
+        id: &str,
+    ) -> Result<serde_json::Value, String> {
+        call_mobile(app, "jobProgress", &serde_json::json!({ "id": id })).await
+    }
 }
 
 #[cfg(target_os = "android")]
-pub use inner::{call_mobile, cancel_mobile, downloads_dir, engine_version, init};
+pub use inner::{call_mobile, cancel_mobile, downloads_dir, engine_version, init, job_progress_mobile, job_state_mobile};

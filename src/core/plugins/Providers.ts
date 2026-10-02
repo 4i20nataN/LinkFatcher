@@ -1,4 +1,4 @@
-import type { MediaInfo, PlatformId, MediaFormat, MediaType, SearchResult, PlaylistInfo, PlaylistItem } from '../../types';
+import type { MediaInfo, PlatformId, MediaFormat, MediaType, PlaylistInfo, PlaylistItem } from '../../types';
 import type { MediaProvider } from './MediaProvider';
 import { probeUrlWithAdapter, probePlaylistWithAdapter } from '../ytdlp/YtDlpAdapter';
 import { PLATFORM_REGISTRY, matchPlatformForUrl, type PlatformConfig } from './platformConfigs';
@@ -420,10 +420,6 @@ export class ProviderRegistry {
 
   private static fallback = new GenericProvider();
 
-  static register(provider: MediaProvider) {
-    this.providers.push(provider);
-  }
-
   static getProviderForUrl(url: string): MediaProvider {
     for (const p of this.providers) {
       if (p.canHandle(url)) {
@@ -451,41 +447,6 @@ export class ProviderRegistry {
     };
     return configs[id] || configs.generic;
   }
-}
-
-// Generate high quality mock search results for YouTube
-export function mockSearchYouTube(query: string): SearchResult[] {
-  const topics = [
-    { title: 'Como dominar Clean Architecture no Flutter em 2026', author: 'Código Limpo Tech', image: '1507679799987-c73779587ccf' },
-    { title: 'Synthwave Relaxante - Estudo e Concentração Profunda', author: 'Cosmic Sounds', image: '1550751827-4bd374c3f58b' },
-    { title: 'Dicas Práticas de Figma para Engenheiros de Software', author: 'Figma BR Master', image: '1581291518633-83b4ebd1d83e' },
-    { title: 'Nothing Phone (2a) - Por que esse design chama tanto a atenção?', author: 'Tech Reviews BR', image: '1546054454-aa26e2b734c7' },
-    { title: 'Som de Chuva e Trovões na Floresta Tropical (10 Horas)', author: 'Natureza Relaxante', image: '1470071459604-3b5ec3a7fe05' },
-    { title: 'React 19 + TypeScript + Tailwind CSS: O Futuro do Front-End', author: 'RocketCode BR', image: '1517694712202-14dd9538aa97' }
-  ];
-
-  // If query is empty, return defaults. Otherwise, customize titles using the query
-  return topics.map((t, idx) => {
-    const finalTitle = query
-      ? `${query.charAt(0).toUpperCase() + query.slice(1)}: ${t.title.split(' - ')[0]}`
-      : t.title;
-
-    const secs = rand(120, 2700);
-    const mins = Math.floor(secs / 60);
-    const remaining = secs % 60;
-
-    return {
-      id: `yt_search_${idx}_${rand(100, 999)}`,
-      title: finalTitle,
-      url: `https://youtube.com/watch?v=mockId${idx}ab`,
-      thumbnail: `https://images.unsplash.com/photo-${t.image}?w=400&auto=format&fit=crop&q=60`,
-      duration: secs,
-      duration_string: `${mins}:${remaining.toString().padStart(2, '0')}`,
-      view_count: rand(12000, 5400000),
-      uploader: t.author,
-      description: `${t.title} - ${t.author}`,
-    };
-  });
 }
 
 /**

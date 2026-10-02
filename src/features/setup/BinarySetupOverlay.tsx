@@ -80,7 +80,7 @@ export const BinarySetupOverlay: React.FC<{ onReady: () => void }> = ({ onReady 
   const check = useCallback(async () => {
     const { invoke } = await import('@tauri-apps/api/core');
     try {
-      const s = await invoke<{ ready: boolean; binaryPath?: string }>('ytdlp_status');
+      const s = await invoke<{ ready: boolean; binaryPath?: string; missing?: string[] }>('ytdlp_status');
       if (s.binaryPath) {
         const sep = s.binaryPath.includes('\\') ? '\\' : '/';
         setDestDir(s.binaryPath.split(sep).slice(0, -1).join(sep));

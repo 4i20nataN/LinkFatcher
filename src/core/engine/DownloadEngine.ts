@@ -25,6 +25,19 @@ function withRateLimitHint(msg: string, lang: string): string {
   return msg;
 }
 
+// Texto da atividade sem % (fragmento/retry/aviso do extrator): prova de
+// vida enquanto o yt-dlp não imprime progresso — sem isso a UI congela em
+// 0% e parece bugada num stall real. Limpa no próximo progresso.
+function formatActivityMessage(data: any, lang: string): string {
+  const en = lang === 'en';
+  if (data.kind === 'fragment' && typeof data.current === 'number' && typeof data.total === 'number') {
+    return en ? `Fragment ${data.current}/${data.total}` : `Fragmento ${data.current}/${data.total}`;
+  }
+  if (data.kind === 'retry') return en ? 'Retrying…' : 'Tentando de novo…';
+  if (typeof data.text === 'string' && data.text) return data.text;
+  return en ? 'Working…' : 'Trabalhando…';
+}
+
 // Platforms that support real yt-dlp extraction
 const YT_DLP_PLATFORMS = new Set([
   'youtube', 'tiktok', 'instagram', 'facebook', 'x', 'reddit', 'soundcloud', 'twitch', 'vimeo'
@@ -38,6 +51,29 @@ class DownloadEngineClass {
   private cancelFns = new Map<string, () => void>();
   // Throttle de renders: último notify de progresso por download (ms)
   private lastProgressNotify = new Map<string, number>();
+  // Último evento recebido por download: sem evento há muito tempo + volta
+  // ao foreground = `complete` perdido com WebView suspenso → reconcilia.
+  private lastEventAt = new Map<string, number>();
+  // Assinatura do último evento aplicado por download: o transporte é DUPLO
+  // (trigger + CustomEvent) e a duplicata chegava a dobrar os renders —
+  // no armv7 isso afogava o WebView (card minutos atrasado). Iguais seguidos
+  // não mudam nada visível: descarta.
+  private lastEventSig = new Map<string, string>();
+  // Unlisten do `listen('yt-dlp-progress')` por download: desfecho aplicado
+  // via reconcile também precisa soltar o listener (senão vaza).
+  private unlistenFns = new Map<string, () => void>();
+  // Poll de segurança por download (só Android, 1x/s): push (trigger +
+  // CustomEvent) já falhou das duas formas — poll via invoke é
+  // request/response e anda mesmo com listener morto. Mata no settle.
+  private pollTimers = new Map<string, ReturnType<typeof setInterval>>();
+
+  private stopPoll(id: string) {
+    const t = this.pollTimers.get(id);
+    if (t !== undefined) {
+      clearInterval(t);
+      this.pollTimers.delete(id);
+    }
+  }
 
   private settings: AppSettings = {
     themeMode: 'dark',
@@ -72,12 +108,12 @@ class DownloadEngineClass {
       if (stored) {
         const parsed: DownloadItem[] = JSON.parse(stored);
         this.items = parsed.map(item => {
-          // `processing` é transiente (fase do ffmpeg) — nunca sobrevive reload.
+          // `processing`/`activity` são transientes — nunca sobrevivem reload.
           // Reset in-progress downloads to queued on reload
           if (item.status === 'downloading') {
-            return { ...item, status: 'paused', speed: 0, eta: 0, processing: false };
+            return { ...item, status: 'paused', speed: 0, eta: 0, processing: false, activity: undefined };
           }
-          return { ...item, processing: false };
+          return { ...item, processing: false, activity: undefined };
         });
       }
     } catch (e) {
@@ -105,7 +141,7 @@ class DownloadEngineClass {
       const active = this.items.filter(i => ['queued', 'downloading', 'paused'].includes(i.status));
       const finished = this.items.filter(i => !['queued', 'downloading', 'paused'].includes(i.status));
       const trimmedFinished = finished.slice(0, DownloadEngineClass.MAX_PERSISTED_FINISHED);
-      const toPersist = [...active, ...trimmedFinished];
+      const toPersist = [...active, ...trimmedFinished].map(({ activity: _a, ...rest }) => rest);
       localStorage.setItem('universal_downloader_items', JSON.stringify(toPersist));
     } catch (e) {
       console.error('Error saving engine state', e);
@@ -129,6 +165,16 @@ class DownloadEngineClass {
     const current = this.getItems();
     this.listeners.forEach(l => l(current));
     this.saveState(persist);
+  }
+
+  // Troca a referência do item (update imutável): a UI memoiza cards por
+  // identidade (`prev.item === next.item`) e pula re-render de quem não
+  // mudou — sem isso, cada tick de progresso re-renderiza a lista inteira
+  // (mutação in-place mantém a ref e o memo nunca dispara). Chamar em todo
+  // ponto que muta um item antes do notify.
+  private touch(id: string) {
+    const i = this.items.findIndex(x => x.id === id);
+    if (i >= 0) this.items[i] = { ...this.items[i] };
   }
 
   addDownload(media: MediaInfo, format: MediaFormat, formatOptions?: FormatOptions | null) {
@@ -233,6 +279,7 @@ class DownloadEngineClass {
     item.speed = 0;
     item.eta = 0;
     item.processing = false;
+    this.touch(id);
     this.notify();
   }
 
@@ -242,6 +289,7 @@ class DownloadEngineClass {
 
     item.status = 'queued';
     item.processing = false;
+    this.touch(id);
     this.notify();
     this.processQueue();
   }
@@ -270,6 +318,7 @@ class DownloadEngineClass {
     item.speed = 0;
     item.eta = 0;
     item.processing = false;
+    this.touch(id);
     this.notify();
   }
 
@@ -350,6 +399,7 @@ class DownloadEngineClass {
     item.processing = false;
     item.error = undefined;
     item.subWarning = undefined;
+    this.touch(id);
     this.notify();
     this.processQueue();
   }
@@ -392,6 +442,9 @@ class DownloadEngineClass {
 
   private async startDownload(item: DownloadItem) {
     item.status = 'downloading';
+    this.lastEventAt.set(item.id, Date.now());
+    this.lastEventSig.delete(item.id);
+    this.touch(item.id);
     this.notify();
 
     // Desktop Tauri é o único transporte (web/mobile removidos).
@@ -399,6 +452,7 @@ class DownloadEngineClass {
     if (!isTauri) {
       item.status = 'failed';
       item.error = 'Download disponível apenas no app desktop';
+      this.touch(item.id);
       this.notify();
       return;
     }
@@ -461,33 +515,30 @@ class DownloadEngineClass {
       // Handler de progresso unificado (suporta listen do Tauri desktop e CustomEvent no Android)
       const handleProgressData = (data: any) => {
         if (!data || data.id !== item.id) return;
+        const sig = [
+          data.type, data.percent, data.downloaded, data.total,
+          data.speed, data.eta, data.filePath, data.message, data.kind,
+          data.current, data.text,
+        ].join('|');
+        if (this.lastEventSig.get(item.id) === sig) return;
+        this.lastEventSig.set(item.id, sig);
+        this.lastEventAt.set(item.id, Date.now());
 
         if (data.type === 'progress') {
-          item.progress = typeof data.percent === 'number' ? data.percent : (parseFloat(data.percent) || 0);
-          const rawSpeed = parseFloat(data.speed) || 0;
-          item.speed = rawSpeed <= 0 || item.speed <= 0 ? rawSpeed : item.speed + 0.4 * (rawSpeed - item.speed);
-          item.eta = parseFloat(data.eta) || 0;
-          if (data.downloaded && data.downloaded > 0) {
-            item.sizeDownloaded = data.downloaded;
-          }
-          if (data.total && data.total > 0) {
-            item.sizeTotal = data.total;
-          }
-          const now = Date.now();
-          // No Android a lista re-renderiza cards animados (motion) a cada
-          // notify: 500ms é indistinguível no olho e corta os renders pela
-          // metade; desktop mantém 250ms.
-          const throttleMs = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent) ? 500 : 250;
-          if (now - (this.lastProgressNotify.get(item.id) ?? 0) >= throttleMs) {
-            this.lastProgressNotify.set(item.id, now);
-            this.notify(false);
-          }
+          this.applyProgressEvent(item.id, data);
         } else if (data.type === 'processing') {
           if (item.status === 'downloading') {
             item.processing = true;
             item.speed = 0;
             item.eta = 0;
+            this.touch(item.id);
             this.notify();
+          }
+        } else if (data.type === 'activity') {
+          if (item.status === 'downloading') {
+            item.activity = formatActivityMessage(data, this.settings.language);
+            this.touch(item.id);
+            this.notify(false);
           }
         } else if (data.type === 'complete') {
           if (item.status === 'paused' || item.status === 'cancelled') {
@@ -512,7 +563,12 @@ class DownloadEngineClass {
           item.finishedAt = new Date().toISOString();
           this.cancelFns.delete(item.id);
           this.lastProgressNotify.delete(item.id);
+        this.lastEventAt.delete(item.id);
+        this.lastEventSig.delete(item.id);
+        this.unlistenFns.get(item.id)?.();
+        this.unlistenFns.delete(item.id);
           finish();
+          this.touch(item.id);
           this.notify();
         } else if (data.type === 'error') {
           if (item.status === 'paused' || item.status === 'cancelled') {
@@ -529,22 +585,53 @@ class DownloadEngineClass {
           item.error = withRateLimitHint(data.message || 'Download failed', this.settings.language);
           this.cancelFns.delete(item.id);
           this.lastProgressNotify.delete(item.id);
+        this.lastEventAt.delete(item.id);
+        this.lastEventSig.delete(item.id);
+        this.unlistenFns.get(item.id)?.();
+        this.unlistenFns.delete(item.id);
           finish();
+          this.touch(item.id);
           this.notify();
         }
       };
 
-      // Listen for yt-dlp-progress events (transporte único: o Kotlin emite
-      // só via `trigger()`; desktop e Android ouvem pelo mesmo `listen`).
+      // Listen for yt-dlp-progress events (transporte DUPLO no Android:
+      // `trigger()` via Tauri-listen + CustomEvent via evaluateJavascript —
+      // regressão v1.4.0 provou que só-trigger não entrega no SM-A107M).
       const unlisten = await listen('yt-dlp-progress', (event) => {
         handleProgressData(event.payload);
       });
+
+      // Listen for yt-dlp-progress CustomEvents (Android WebView)
+      const onCustomProgress = (e: Event) => {
+        handleProgressData((e as CustomEvent).detail);
+      };
+      if (typeof window !== 'undefined') {
+        window.addEventListener('yt-dlp-progress', onCustomProgress);
+      }
+      this.unlistenFns.set(item.id, () => {
+        try { unlisten(); } catch { /* unlisten idempotente */ }
+        if (typeof window !== 'undefined') {
+          window.removeEventListener('yt-dlp-progress', onCustomProgress);
+        }
+      });
+      // Poll de segurança (só Android): 1x/s puxa o snapshot do Kotlin.
+      // Push pode morrer nos dois transportes; poll é request/response.
+      if (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)) {
+        this.stopPoll(item.id);
+        const timer = setInterval(() => {
+          this.pollProgress(item.id).catch(() => {});
+        }, 1000);
+        this.pollTimers.set(item.id, timer);
+      }
 
       let settled = false;
       const finish = () => {
         if (settled) return;
         settled = true;
-        try { unlisten(); } catch { /* unlisten idempotente */ }
+        this.stopPoll(item.id);
+        this.unlistenFns.get(item.id)?.();
+        this.unlistenFns.delete(item.id);
       };
 
       // Store unlisten and kill hook for cancel/pause. O status já foi
@@ -553,6 +640,10 @@ class DownloadEngineClass {
       this.cancelFns.set(item.id, () => {
         finish();
         this.lastProgressNotify.delete(item.id);
+        this.lastEventAt.delete(item.id);
+        this.lastEventSig.delete(item.id);
+        this.unlistenFns.get(item.id)?.();
+        this.unlistenFns.delete(item.id);
         const args = item.status === 'cancelled'
           ? { id: item.id, cleanup: true }
           : { id: item.id };
@@ -569,6 +660,9 @@ class DownloadEngineClass {
         item.filePath = resultPath;
         item.finishedAt = new Date().toISOString();
         this.cancelFns.delete(item.id);
+        this.lastEventAt.delete(item.id);
+        this.lastEventSig.delete(item.id);
+        this.touch(item.id);
         this.notify();
       }
     } catch (error: any) {
@@ -577,7 +671,13 @@ class DownloadEngineClass {
       if (item.status === 'paused' || item.status === 'cancelled') {
         item.processing = false;
         this.cancelFns.delete(item.id);
+        this.stopPoll(item.id);
         this.lastProgressNotify.delete(item.id);
+        this.lastEventAt.delete(item.id);
+        this.lastEventSig.delete(item.id);
+        this.unlistenFns.get(item.id)?.();
+        this.unlistenFns.delete(item.id);
+        this.touch(item.id);
         this.notify();
         return;
       }
@@ -585,7 +685,13 @@ class DownloadEngineClass {
       item.processing = false;
       item.error = withRateLimitHint(adapterErrorMessage(error, 'Download failed'), this.settings.language);
       this.cancelFns.delete(item.id);
+      this.stopPoll(item.id);
       this.lastProgressNotify.delete(item.id);
+      this.lastEventAt.delete(item.id);
+      this.lastEventSig.delete(item.id);
+      this.unlistenFns.get(item.id)?.();
+      this.unlistenFns.delete(item.id);
+      this.touch(item.id);
       this.notify();
     }
   }
@@ -615,6 +721,129 @@ class DownloadEngineClass {
       this.fireCleanup(item.id, item.filePath);
     }
     this.notify();
+  }
+
+  // Aplica um evento de progresso (push ou poll): corpo único p/ não
+  // divergir. Throttle de notify continua valendo (500ms Android).
+  private applyProgressEvent(id: string, data: any) {
+    const item = this.items.find(i => i.id === id);
+    if (!item || item.status !== 'downloading') return;
+    item.progress = typeof data.percent === 'number' ? data.percent : (parseFloat(data.percent) || 0);
+    const rawSpeed = parseFloat(data.speed) || 0;
+    item.speed = rawSpeed <= 0 || item.speed <= 0 ? rawSpeed : item.speed + 0.4 * (rawSpeed - item.speed);
+    item.eta = parseFloat(data.eta) || 0;
+    item.activity = undefined;
+    if (data.downloaded && data.downloaded > 0) {
+      item.sizeDownloaded = data.downloaded;
+    }
+    if (data.total && data.total > 0) {
+      item.sizeTotal = data.total;
+    }
+    const now = Date.now();
+    // No Android a lista re-renderiza cards animados (motion) a cada
+    // notify: 500ms é indistinguível no olho e corta os renders pela
+    // metade; desktop mantém 250ms.
+    const throttleMs = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent) ? 500 : 250;
+    if (now - (this.lastProgressNotify.get(item.id) ?? 0) >= throttleMs) {
+      this.lastProgressNotify.set(item.id, now);
+      this.touch(item.id);
+      this.notify(false);
+    }
+  }
+
+  // Poll de segurança (só Android, 1x/s por download ativo): puxa o snapshot
+  // do Kotlin via invoke (request/response). Se o job sumiu, reconcilia na
+  // hora em vez de esperar o foreground. Erro/reject = tenta no próximo tick.
+  private async pollProgress(id: string) {
+    const item = this.items.find(i => i.id === id);
+    if (!item || item.status !== 'downloading') {
+      this.stopPoll(id);
+      return;
+    }
+    let invokeFn: ((cmd: string, args?: unknown) => Promise<unknown>) | null = null;
+    try {
+      ({ invoke: invokeFn } = await import('@tauri-apps/api/core'));
+    } catch {
+      return;
+    }
+    let snap: any = null;
+    try {
+      snap = await invokeFn!('ytdlp_job_progress', { id });
+    } catch {
+      return;
+    }
+    if (!snap || snap.active !== true) {
+      this.stopPoll(id);
+      this.reconcileStuck().catch(() => {});
+      return;
+    }
+    if (typeof snap.percent !== 'number') return;
+    // Reaproveita o caminho do push: dedupe + throttle + touch valem igual.
+    this.applyProgressEvent(id, {
+      id, type: 'progress',
+      percent: snap.percent, speed: snap.speed, eta: snap.eta,
+      downloaded: snap.downloaded, total: snap.total,
+    });
+  }
+
+  // Reconciliação pós-background (Android): o `trigger()` do Kotlin não
+  // enfileira — evento emitido com o WebView suspenso (minimizar/sair) é
+  // descartado e o `complete` nunca chega: o item trava em `downloading`
+  // com o arquivo já em disco (sintoma: notificação "Concluído" + arquivo
+  // publicado, UI parada em 0%). Na volta ao foreground, pergunta o
+  // desfecho ao Kotlin (`ytdlp_job_state`) e aplica SEM reiniciar nada.
+  // Seguro por padrão: `running`/`unknown`/erro = não age (nunca duplica o
+  // processo); idempotente (só aplica se ainda estiver `downloading`).
+  async reconcileStuck() {
+    if (typeof navigator === 'undefined' || !/Android/i.test(navigator.userAgent)) return;
+    const STALE_MS = 20_000;
+    const now = Date.now();
+    const stale = this.items.filter(i =>
+      i.status === 'downloading' && (now - (this.lastEventAt.get(i.id) ?? 0)) >= STALE_MS
+    );
+    if (stale.length === 0) return;
+    let invokeFn: ((cmd: string, args?: unknown) => Promise<unknown>) | null = null;
+    try {
+      ({ invoke: invokeFn } = await import('@tauri-apps/api/core'));
+    } catch {
+      return;
+    }
+    for (const item of stale) {
+      let st: any = null;
+      try {
+        st = await invokeFn!('ytdlp_job_state', { id: item.id });
+      } catch {
+        continue;
+      }
+      if (!st || st.state !== 'finished') continue;
+      const cur = this.items.find(i => i.id === item.id);
+      if (!cur || cur.status !== 'downloading') continue;
+      if (st.ok && st.filePath) {
+        cur.status = 'completed';
+        cur.progress = 100;
+        cur.processing = false;
+        cur.filePath = st.filePath;
+        if (typeof st.size === 'number' && st.size > 0) {
+          cur.sizeTotal = st.size;
+          cur.sizeDownloaded = st.size;
+        }
+        cur.finishedAt = new Date().toISOString();
+      } else {
+        cur.status = 'failed';
+        cur.processing = false;
+        cur.error = typeof st.error === 'string' && st.error
+          ? st.error
+          : 'Download interrompido em segundo plano — toque para repetir';
+      }
+      this.cancelFns.delete(item.id);
+      this.lastProgressNotify.delete(item.id);
+      this.lastEventAt.delete(item.id);
+      this.lastEventSig.delete(item.id);
+      this.unlistenFns.get(item.id)?.();
+      this.unlistenFns.delete(item.id);
+      this.touch(item.id);
+      this.notify();
+    }
   }
 
   // Progress helpers

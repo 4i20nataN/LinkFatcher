@@ -41,12 +41,6 @@ export function setupElectronShim() {
           });
           return res;
         }
-        case 'fs:stat': {
-          const payload = args[0] as { filePath?: string } | string;
-          const filePath = typeof payload === 'string' ? payload : (payload?.filePath || '');
-          const res = await invoke<T>('fs_stat', { filePath });
-          return res;
-        }
         case 'yt-dlp-probe': {
           return invoke<T>('ytdlp_probe', { options: args[0] });
         }

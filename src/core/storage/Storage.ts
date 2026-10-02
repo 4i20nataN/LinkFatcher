@@ -1,25 +1,5 @@
 import { FavoriteItem, DownloadLaterItem, AppSettings } from '../../types';
 
-// S5: importação nunca confia no JSON — settings passam por whitelist de
-// chaves/tipos (desconhecido = default atual), listas exigem `url` string.
-function sanitizeSettings(raw: unknown): AppSettings | null {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const out: AppSettings = StorageService.getSettings();
-  const record = raw as Record<string, unknown>;
-  (Object.keys(out) as (keyof AppSettings)[]).forEach((k) => {
-    const v = record[k as string];
-    if (v === undefined) return;
-    if (typeof v === typeof out[k]) {
-      (out[k] as unknown) = v;
-    }
-  });
-  return out;
-}
-
-function hasUrl(x: unknown): boolean {
-  return !!x && typeof x === 'object' && typeof (x as { url?: unknown }).url === 'string';
-}
-
 export class StorageService {
   // --- FAVORITES ---
   static getFavorites(): FavoriteItem[] {
@@ -133,38 +113,6 @@ export class StorageService {
 
   static saveSettings(settings: AppSettings) {
     localStorage.setItem('universal_downloader_settings', JSON.stringify(settings));
-  }
-
-  // --- EXPORT / IMPORT CONFIGS ---
-  static exportConfig(): string {
-    const data = {
-      settings: this.getSettings(),
-      favorites: this.getFavorites(),
-      later: this.getDownloadLater()
-    };
-    return JSON.stringify(data, null, 2);
-  }
-
-  static importConfig(jsonStr: string): boolean {
-    try {
-      const parsed: unknown = JSON.parse(jsonStr);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
-      const obj = parsed as Record<string, unknown>;
-      const settings = sanitizeSettings(obj.settings);
-      if (settings) {
-        this.saveSettings(settings);
-      }
-      if (Array.isArray(obj.favorites)) {
-        this.saveFavorites(obj.favorites.filter(hasUrl) as FavoriteItem[]);
-      }
-      if (Array.isArray(obj.later)) {
-        this.saveDownloadLater(obj.later.filter(hasUrl) as DownloadLaterItem[]);
-      }
-      return true;
-    } catch (e) {
-      console.error('Import failed', e);
-      return false;
-    }
   }
 
   // --- CLEAR CACHE & STORAGE ---

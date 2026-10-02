@@ -45,6 +45,9 @@ export interface DownloadItem {
   status: 'queued' | 'downloading' | 'paused' | 'completed' | 'failed' | 'cancelled';
   /** Transiente (não é estado): ffmpeg cortando em silêncio após o download. */
   processing?: boolean;
+  /** Transiente: última atividade do yt-dlp sem % (fragmento/retry/aviso).
+      Limpa no próximo progresso/conclusão; nunca persiste. */
+  activity?: string;
   addedAt: string;
   finishedAt?: string;
   url: string;
@@ -53,54 +56,4 @@ export interface DownloadItem {
   subWarning?: string;
   filePath?: string;
   finalArgs?: string[];
-}
-
-export interface DownloadOptions {
-  url: string;
-  outputPath?: string;
-  filename?: string;
-  // Format options
-  format?: string;
-  audioOnly?: boolean;
-  audioFormat?: 'mp3' | 'aac' | 'flac' | 'm4a' | 'opus' | 'wav';
-  audioQuality?: string;
-  mergeOutputFormat?: string;
-  // Subtitle options
-  writeSubs?: boolean;
-  writeAutoSubs?: boolean;
-  subLangs?: string;
-  subFormat?: string;
-  embedSubs?: boolean;
-  // Thumbnail options
-  writeThumbnail?: boolean;
-  embedThumbnail?: boolean;
-  // Metadata options
-  embedMetadata?: boolean;
-  // Advanced options
-  outputTemplate?: string;
-  restrictFilenames?: boolean;
-  noOverwrites?: boolean;
-  keepVideo?: boolean;
-  // Trim/cut
-  downloadSections?: string; // e.g. "*01:30-05:00"
-  // Video only (no audio track)
-  videoOnly?: boolean;
-  // SponsorBlock
-  sponsorblockRemove?: string; // e.g. "all" or comma-separated categories
-  // FPS limit
-  fpsMax?: number;
-  // Auth options
-  proxy?: string;
-  ffmpegLocation?: string;
-  // Rate limiting
-  bandLimit?: number; // KB/s, 0 = unlimited
-  // Post-processors
-  normalizeAudio?: boolean;
-  videoSharpen?: 'none' | 'light' | 'normal' | 'strong';
-  // Advanced download
-  concurrentFragments?: number;
-  retries?: number;
-  customFilename?: string;
-  videoFormat?: string;
-  videoCodec?: string;
 }

@@ -83,6 +83,29 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         java.util.concurrent.LinkedBlockingQueue()
     )
     private val lastPaths = ConcurrentHashMap<String, String>()
+    private var webView: WebView? = null
+    // Jobs ativos (processId → início) + desfechos recentes: o `trigger()`
+    // não enfileira — evento emitido com o WebView suspenso (minimizar/sair)
+    // é descartado e o JS nunca recebe o `complete`, travando o item em
+    // `downloading` com o arquivo já em disco. `jobState` permite ao engine
+    // reconciliar na volta ao foreground sem reiniciar nada (reiniciar
+    // duplicaria o processo). A lib não expõe query não-destrutiva
+    // (só `destroyProcessById`), por isso o registro é nosso. `unknown` =
+    // sem registro: o frontend NÃO age — seguro por padrão.
+    private val activeJobs = ConcurrentHashMap<String, Long>()
+    // Último progresso parseado por job: o engine usa `jobProgress` para
+    // PULLAR o estado 1x/s (só Android). Push (trigger + CustomEvent) já
+    // falhou das duas formas neste aparelho — poll via invoke é
+    // request/response e não depende de listener, timing nem foreground.
+    private val lastProgress = ConcurrentHashMap<String, MobileProgress>()
+    private data class FinishedJob(val ok: Boolean, val filePath: String?, val size: Long, val error: String?, val at: Long)
+    private val finishedJobs = ConcurrentHashMap<String, FinishedJob>()
+    private fun rememberFinished(id: String, job: FinishedJob) {
+        finishedJobs[id] = job
+        if (finishedJobs.size > 100) {
+            finishedJobs.entries.minByOrNull { it.value.at }?.key?.let { finishedJobs.remove(it) }
+        }
+    }
     // Self-update do yt-dlp respeita o toggle da UI (default ligado).
     // Ajustado via comando `setUpdatesEnabled` no boot e ao trocar.
     @Volatile
@@ -92,6 +115,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
 
     override fun load(webView: WebView) {
         super.load(webView)
+        this.webView = webView
         // Pre-warm em background: a 1ª init extrai o env Python dos assets
         // (segundos em aparelho fraco). Sem isso, a 1ª análise pagava esse
         // custo dentro do probe, parecendo "lentidão ao analisar".
@@ -153,15 +177,24 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
-    // Transporte único de progresso: `trigger()` (evento Tauri, ouvido pelo
-    // `listen` do frontend nas duas plataformas). O 2º transporte via
-    // `evaluateJavascript(CustomEvent)` foi removido: dobrava o IPC por tick
-    // de progresso sem nenhum consumidor exclusivo.
+    // Transporte DUPLO de progresso (regressão v1.4.0 revertida): `trigger()`
+    // (evento Tauri, `listen` no frontend) + `evaluateJavascript`
+    // (CustomEvent na window). O H4 removeu o 2º por "dobrar o IPC", mas no
+    // SM-A107M o `trigger()` não entrega progresso — o CustomEvent era o que
+    // funcionava em v1.3.1. Dedupe no engine (valores idempotentes + guards
+    // de status) absorve a duplicata. Não remover de novo sem prova no
+    // aparelho de que o `trigger()` sozinho sustenta o progresso.
     private fun emitOnUi(event: String, build: JSObject.() -> Unit) {
         val data = JSObject()
         data.build()
+        val jsonStr = data.toString()
         activity.runOnUiThread {
             trigger(event, data)
+            webView?.let { wv ->
+                val escapedJson = JSONObject.quote(jsonStr)
+                val js = "(function(){ try { var d = JSON.parse($escapedJson); window.dispatchEvent(new CustomEvent('$event', { detail: d })); } catch(e){} })();"
+                wv.evaluateJavascript(js, null)
+            }
         }
     }
 
@@ -338,7 +371,36 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val seen = mutableListOf<String>()
             var lastPercent = -1
             var processingSent = false
+            // Teto de 2 eventos/s: sem ele, download rápido emite ~100
+            // updates (1 por ponto de %) × 2 transportes = tempestade de
+            // renders que afoga o WebView no armv7 (notificação nativa anda,
+            // card atrasa "um tempão"). % é sempre o valor atual — pular
+            // intermediários não perde informação.
+            var lastEmitMs = 0L
+            // Sinais de vida sem % (fragmentos DASH/HLS, retries, avisos do
+            // extrator): sem eles a UI congela em 0% por minutos num stall
+            // real — o usuário chama de "bugado". Throttle de 3s; o engine
+            // limpa no próximo progresso/conclusão.
+            var lastActivityMs = 0L
+            fun emitActivity(kind: String, a: Int = -1, b: Int = -1, text: String? = null) {
+                val now = System.currentTimeMillis()
+                if (now - lastActivityMs < 3_000) return
+                lastActivityMs = now
+                emitOnUi("yt-dlp-progress") {
+                    put("id", args.processId)
+                    put("type", "activity")
+                    put("kind", kind)
+                    if (a >= 0) put("current", a)
+                    if (b >= 0) put("total", b)
+                    if (text != null) put("text", text.take(140))
+                }
+            }
             try {
+                activeJobs[args.processId] = startMs
+                // Retry reusa o id: limpa desfecho da tentativa anterior para
+                // um `finished` velho nunca reconciliar a nova execução.
+                finishedJobs.remove(args.processId)
+                lastProgress.remove(args.processId)
                 val request = YoutubeDLRequest(emptyList<String>())
                 request.addCommands(args.argv)
                 val response = YoutubeDL.getInstance().execute(request, args.processId) { _, _, line ->
@@ -359,8 +421,13 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                         showDlProcessing(args.processId, args.title)
                     }
                     parseProgress(line)?.let { p ->
-                        if (p.percent.toInt() != lastPercent) {
+                        // Snapshot p/ `jobProgress` (poll do engine): guarda
+                        // TODA linha parseada, sem o teto de 500ms do emit.
+                        lastProgress[args.processId] = p
+                        val nowMs = System.currentTimeMillis()
+                        if (p.percent.toInt() != lastPercent && (lastPercent == -1 || nowMs - lastEmitMs >= 500)) {
                             lastPercent = p.percent.toInt()
+                            lastEmitMs = nowMs
                             emitOnUi("yt-dlp-progress") {
                                 put("id", args.processId)
                                 put("type", "progress")
@@ -372,6 +439,13 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                             }
                             showDlProgress(args.processId, args.title, p.percent.toInt())
                         }
+                    } ?: parseActivity(line)?.let { a ->
+                        // Linha sem % mas com informação (fragmento/retry/aviso).
+                        when (a) {
+                            is ActivitySignal.Fragment -> emitActivity("fragment", a.current, a.total)
+                            is ActivitySignal.Retry -> emitActivity("retry")
+                            is ActivitySignal.Line -> emitActivity("line", text = a.text)
+                        }
                     }
                 }
                 if (response.exitCode != 0) {
@@ -382,6 +456,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                         put("message", msg)
                     }
                     showDlError(args.processId, args.title, msg)
+                    rememberFinished(args.processId, FinishedJob(false, null, 0, msg, System.currentTimeMillis()))
                     invoke.reject(msg)
                     return@cmd
                 }
@@ -409,6 +484,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                         put("type", "error")
                         put("message", msg)
                     }
+                    rememberFinished(args.processId, FinishedJob(false, null, 0, msg, System.currentTimeMillis()))
                     invoke.reject(msg)
                     return@cmd
                 }
@@ -430,6 +506,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                     if (filtersNote != null) put("subWarning", filtersNote)
                 }
                 showDlComplete(args.processId, args.title, File(finalPath))
+                rememberFinished(args.processId, FinishedJob(true, finalPath, size, null, System.currentTimeMillis()))
                 invoke.resolve(JSObject().apply {
                     put("filePath", finalPath)
                     put("size", size)
@@ -445,7 +522,11 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                     put("message", msg)
                 }
                 showDlError(args.processId, args.title, msg)
+                rememberFinished(args.processId, FinishedJob(false, null, 0, msg, System.currentTimeMillis()))
                 invoke.reject(msg)
+            } finally {
+                activeJobs.remove(args.processId)
+                lastProgress.remove(args.processId)
             }
         }
     }
@@ -465,6 +546,65 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve(JSObject().apply { put("success", killed) })
         } catch (e: Exception) {
             invoke.reject(e.message ?: "Erro ao cancelar")
+        }
+    }
+
+    // ---- jobState: reconciliação pós-background (ver activeJobs acima) ----
+    @Command
+    fun jobState(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(CancelArgs::class.java)
+            val id = args.id
+            if (id.isBlank()) {
+                invoke.reject("id vazio")
+                return
+            }
+            val res = JSObject()
+            val fin = finishedJobs[id]
+            when {
+                activeJobs.containsKey(id) -> res.put("state", "running")
+                fin != null -> {
+                    res.put("state", "finished")
+                    res.put("ok", fin.ok)
+                    if (fin.filePath != null) res.put("filePath", fin.filePath)
+                    res.put("size", fin.size)
+                    if (fin.error != null) res.put("error", fin.error)
+                }
+                else -> res.put("state", "unknown")
+            }
+            invoke.resolve(res)
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "jobState falhou")
+        }
+    }
+
+    // ---- jobProgress: snapshot p/ poll do engine (ver lastProgress) ----
+    // Retorna o último progresso parseado do job ATIVO. Job sumiu (concluiu,
+    // falhou, cancelou) = active:false e o engine reconcilia via `jobState`.
+    @Command
+    fun jobProgress(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(CancelArgs::class.java)
+            val id = args.id
+            if (id.isBlank()) {
+                invoke.reject("id vazio")
+                return
+            }
+            val res = JSObject()
+            val p = if (activeJobs.containsKey(id)) lastProgress[id] else null
+            if (p == null) {
+                res.put("active", false)
+            } else {
+                res.put("active", true)
+                res.put("percent", p.percent)
+                res.put("speed", p.speed)
+                res.put("eta", p.eta)
+                res.put("downloaded", p.downloaded)
+                res.put("total", p.total)
+            }
+            invoke.resolve(res)
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "jobProgress falhou")
         }
     }
 
@@ -1016,6 +1156,36 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             || t.startsWith("[EmbedSubtitle]")
             || t.startsWith("[Metadata]")
             || t.startsWith("[ThumbnailsConvertor]")
+    }
+
+    // Sinais de vida sem % (só avaliado quando parseProgress falha): o
+    // engine exibe como atividade ("Fragmento 12/120", "Tentando de novo…")
+    // em vez de 0% morto. Nunca duplica: postprocessor/destination passam
+    // por aqui e não casam nenhum padrão.
+    private sealed interface ActivitySignal {
+        data class Fragment(val current: Int, val total: Int) : ActivitySignal
+        object Retry : ActivitySignal
+        data class Line(val text: String) : ActivitySignal
+    }
+
+    private val fragmentRegex =
+        """\[download\]\s+Downloading fragment (\d+) of (\d+)""".toRegex()
+
+    private fun parseActivity(line: String): ActivitySignal? {
+        val t = line.trim()
+        if (t.isEmpty()) return null
+        fragmentRegex.find(t)?.let {
+            val c = it.groupValues[1].toIntOrNull()
+            val n = it.groupValues[2].toIntOrNull()
+            if (c != null && n != null) return ActivitySignal.Fragment(c, n)
+        }
+        if (t.contains("Retrying", ignoreCase = true) || t.contains("Got error", ignoreCase = true)) {
+            return ActivitySignal.Retry
+        }
+        if (t.startsWith("WARNING") || t.startsWith("ERROR")) {
+            return ActivitySignal.Line(t)
+        }
+        return null
     }
 
     private fun newestFile(known: String?): String? {
