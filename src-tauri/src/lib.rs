@@ -62,6 +62,7 @@ pub fn run() {
       fs::ytdlp_cancel,
       fs::ytdlp_cleanup,
       fs::ytdlp_job_state,
+      fs::ytdlp_job_progress,
       fs::fs_get_downloads_path,
       fs::fs_open_path,
       fs::fs_select_folder,

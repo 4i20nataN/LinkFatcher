@@ -1336,6 +1336,40 @@ pub async fn ytdlp_job_state() -> Result<serde_json::Value, String> {
     Err("job_state suportado só no Android".into())
 }
 
+/// `ytdlp_job_progress` no Android: snapshot do progresso de um job ativo
+/// p/ o poll de segurança do engine (push pode falhar nos dois transportes).
+/// Fora do Android: erro explícito.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn ytdlp_job_progress(
+    app: AppHandle,
+    options: Option<serde_json::Value>,
+    params: Option<serde_json::Value>,
+    payload: Option<serde_json::Value>,
+    id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let resolved_id = if let Some(s) = id {
+        s
+    } else if let Some(ref opts) = options.or(params).or(payload) {
+        if let Some(s) = opts.as_str() {
+            s.to_owned()
+        } else if let Some(id_val) = opts.get("id").and_then(|v| v.as_str()) {
+            id_val.to_owned()
+        } else {
+            return Err("Nenhum ID fornecido para job_progress".into());
+        }
+    } else {
+        return Err("Nenhum ID fornecido para job_progress".into());
+    };
+    crate::mobile_ytdlp::job_progress_mobile(&app, &resolved_id).await
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub async fn ytdlp_job_progress() -> Result<serde_json::Value, String> {
+    Err("job_progress suportado só no Android".into())
+}
+
 /// `ytdlp_cleanup` — apaga artefatos temporários de um download
 /// (`.part`, `.ytdl`, `.temp`, `.cuttmp.*`, fragmentos `-Frag*`).
 /// Aceita `{ id }` (usa os destinos rastreados da sessão), `{ filePath }`

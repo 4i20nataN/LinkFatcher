@@ -93,6 +93,11 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
     // (só `destroyProcessById`), por isso o registro é nosso. `unknown` =
     // sem registro: o frontend NÃO age — seguro por padrão.
     private val activeJobs = ConcurrentHashMap<String, Long>()
+    // Último progresso parseado por job: o engine usa `jobProgress` para
+    // PULLAR o estado 1x/s (só Android). Push (trigger + CustomEvent) já
+    // falhou das duas formas neste aparelho — poll via invoke é
+    // request/response e não depende de listener, timing nem foreground.
+    private val lastProgress = ConcurrentHashMap<String, MobileProgress>()
     private data class FinishedJob(val ok: Boolean, val filePath: String?, val size: Long, val error: String?, val at: Long)
     private val finishedJobs = ConcurrentHashMap<String, FinishedJob>()
     private fun rememberFinished(id: String, job: FinishedJob) {
@@ -395,6 +400,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 // Retry reusa o id: limpa desfecho da tentativa anterior para
                 // um `finished` velho nunca reconciliar a nova execução.
                 finishedJobs.remove(args.processId)
+                lastProgress.remove(args.processId)
                 val request = YoutubeDLRequest(emptyList<String>())
                 request.addCommands(args.argv)
                 val response = YoutubeDL.getInstance().execute(request, args.processId) { _, _, line ->
@@ -415,6 +421,9 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                         showDlProcessing(args.processId, args.title)
                     }
                     parseProgress(line)?.let { p ->
+                        // Snapshot p/ `jobProgress` (poll do engine): guarda
+                        // TODA linha parseada, sem o teto de 500ms do emit.
+                        lastProgress[args.processId] = p
                         val nowMs = System.currentTimeMillis()
                         if (p.percent.toInt() != lastPercent && (lastPercent == -1 || nowMs - lastEmitMs >= 500)) {
                             lastPercent = p.percent.toInt()
@@ -517,6 +526,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 invoke.reject(msg)
             } finally {
                 activeJobs.remove(args.processId)
+                lastProgress.remove(args.processId)
             }
         }
     }
@@ -565,6 +575,36 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve(res)
         } catch (e: Exception) {
             invoke.reject(e.message ?: "jobState falhou")
+        }
+    }
+
+    // ---- jobProgress: snapshot p/ poll do engine (ver lastProgress) ----
+    // Retorna o último progresso parseado do job ATIVO. Job sumiu (concluiu,
+    // falhou, cancelou) = active:false e o engine reconcilia via `jobState`.
+    @Command
+    fun jobProgress(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(CancelArgs::class.java)
+            val id = args.id
+            if (id.isBlank()) {
+                invoke.reject("id vazio")
+                return
+            }
+            val res = JSObject()
+            val p = if (activeJobs.containsKey(id)) lastProgress[id] else null
+            if (p == null) {
+                res.put("active", false)
+            } else {
+                res.put("active", true)
+                res.put("percent", p.percent)
+                res.put("speed", p.speed)
+                res.put("eta", p.eta)
+                res.put("downloaded", p.downloaded)
+                res.put("total", p.total)
+            }
+            invoke.resolve(res)
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "jobProgress falhou")
         }
     }
 

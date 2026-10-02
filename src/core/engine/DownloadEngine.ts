@@ -62,6 +62,18 @@ class DownloadEngineClass {
   // Unlisten do `listen('yt-dlp-progress')` por download: desfecho aplicado
   // via reconcile também precisa soltar o listener (senão vaza).
   private unlistenFns = new Map<string, () => void>();
+  // Poll de segurança por download (só Android, 1x/s): push (trigger +
+  // CustomEvent) já falhou das duas formas — poll via invoke é
+  // request/response e anda mesmo com listener morto. Mata no settle.
+  private pollTimers = new Map<string, ReturnType<typeof setInterval>>();
+
+  private stopPoll(id: string) {
+    const t = this.pollTimers.get(id);
+    if (t !== undefined) {
+      clearInterval(t);
+      this.pollTimers.delete(id);
+    }
+  }
 
   private settings: AppSettings = {
     themeMode: 'dark',
@@ -513,27 +525,7 @@ class DownloadEngineClass {
         this.lastEventAt.set(item.id, Date.now());
 
         if (data.type === 'progress') {
-          item.progress = typeof data.percent === 'number' ? data.percent : (parseFloat(data.percent) || 0);
-          const rawSpeed = parseFloat(data.speed) || 0;
-          item.speed = rawSpeed <= 0 || item.speed <= 0 ? rawSpeed : item.speed + 0.4 * (rawSpeed - item.speed);
-          item.eta = parseFloat(data.eta) || 0;
-          item.activity = undefined;
-          if (data.downloaded && data.downloaded > 0) {
-            item.sizeDownloaded = data.downloaded;
-          }
-          if (data.total && data.total > 0) {
-            item.sizeTotal = data.total;
-          }
-          const now = Date.now();
-          // No Android a lista re-renderiza cards animados (motion) a cada
-          // notify: 500ms é indistinguível no olho e corta os renders pela
-          // metade; desktop mantém 250ms.
-          const throttleMs = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent) ? 500 : 250;
-          if (now - (this.lastProgressNotify.get(item.id) ?? 0) >= throttleMs) {
-            this.lastProgressNotify.set(item.id, now);
-            this.touch(item.id);
-            this.notify(false);
-          }
+          this.applyProgressEvent(item.id, data);
         } else if (data.type === 'processing') {
           if (item.status === 'downloading') {
             item.processing = true;
@@ -623,13 +615,23 @@ class DownloadEngineClass {
           window.removeEventListener('yt-dlp-progress', onCustomProgress);
         }
       });
+      // Poll de segurança (só Android): 1x/s puxa o snapshot do Kotlin.
+      // Push pode morrer nos dois transportes; poll é request/response.
+      if (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)) {
+        this.stopPoll(item.id);
+        const timer = setInterval(() => {
+          this.pollProgress(item.id).catch(() => {});
+        }, 1000);
+        this.pollTimers.set(item.id, timer);
+      }
 
       let settled = false;
       const finish = () => {
         if (settled) return;
         settled = true;
+        this.stopPoll(item.id);
+        this.unlistenFns.get(item.id)?.();
         this.unlistenFns.delete(item.id);
-        try { unlisten(); } catch { /* unlisten idempotente */ }
       };
 
       // Store unlisten and kill hook for cancel/pause. O status já foi
@@ -669,6 +671,7 @@ class DownloadEngineClass {
       if (item.status === 'paused' || item.status === 'cancelled') {
         item.processing = false;
         this.cancelFns.delete(item.id);
+        this.stopPoll(item.id);
         this.lastProgressNotify.delete(item.id);
         this.lastEventAt.delete(item.id);
         this.lastEventSig.delete(item.id);
@@ -682,6 +685,7 @@ class DownloadEngineClass {
       item.processing = false;
       item.error = withRateLimitHint(adapterErrorMessage(error, 'Download failed'), this.settings.language);
       this.cancelFns.delete(item.id);
+      this.stopPoll(item.id);
       this.lastProgressNotify.delete(item.id);
       this.lastEventAt.delete(item.id);
       this.lastEventSig.delete(item.id);
@@ -717,6 +721,69 @@ class DownloadEngineClass {
       this.fireCleanup(item.id, item.filePath);
     }
     this.notify();
+  }
+
+  // Aplica um evento de progresso (push ou poll): corpo único p/ não
+  // divergir. Throttle de notify continua valendo (500ms Android).
+  private applyProgressEvent(id: string, data: any) {
+    const item = this.items.find(i => i.id === id);
+    if (!item || item.status !== 'downloading') return;
+    item.progress = typeof data.percent === 'number' ? data.percent : (parseFloat(data.percent) || 0);
+    const rawSpeed = parseFloat(data.speed) || 0;
+    item.speed = rawSpeed <= 0 || item.speed <= 0 ? rawSpeed : item.speed + 0.4 * (rawSpeed - item.speed);
+    item.eta = parseFloat(data.eta) || 0;
+    item.activity = undefined;
+    if (data.downloaded && data.downloaded > 0) {
+      item.sizeDownloaded = data.downloaded;
+    }
+    if (data.total && data.total > 0) {
+      item.sizeTotal = data.total;
+    }
+    const now = Date.now();
+    // No Android a lista re-renderiza cards animados (motion) a cada
+    // notify: 500ms é indistinguível no olho e corta os renders pela
+    // metade; desktop mantém 250ms.
+    const throttleMs = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent) ? 500 : 250;
+    if (now - (this.lastProgressNotify.get(item.id) ?? 0) >= throttleMs) {
+      this.lastProgressNotify.set(item.id, now);
+      this.touch(item.id);
+      this.notify(false);
+    }
+  }
+
+  // Poll de segurança (só Android, 1x/s por download ativo): puxa o snapshot
+  // do Kotlin via invoke (request/response). Se o job sumiu, reconcilia na
+  // hora em vez de esperar o foreground. Erro/reject = tenta no próximo tick.
+  private async pollProgress(id: string) {
+    const item = this.items.find(i => i.id === id);
+    if (!item || item.status !== 'downloading') {
+      this.stopPoll(id);
+      return;
+    }
+    let invokeFn: ((cmd: string, args?: unknown) => Promise<unknown>) | null = null;
+    try {
+      ({ invoke: invokeFn } = await import('@tauri-apps/api/core'));
+    } catch {
+      return;
+    }
+    let snap: any = null;
+    try {
+      snap = await invokeFn!('ytdlp_job_progress', { id });
+    } catch {
+      return;
+    }
+    if (!snap || snap.active !== true) {
+      this.stopPoll(id);
+      this.reconcileStuck().catch(() => {});
+      return;
+    }
+    if (typeof snap.percent !== 'number') return;
+    // Reaproveita o caminho do push: dedupe + throttle + touch valem igual.
+    this.applyProgressEvent(id, {
+      id, type: 'progress',
+      percent: snap.percent, speed: snap.speed, eta: snap.eta,
+      downloaded: snap.downloaded, total: snap.total,
+    });
   }
 
   // Reconciliação pós-background (Android): o `trigger()` do Kotlin não
